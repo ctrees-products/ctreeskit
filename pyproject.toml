@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ctreeskit"
+version = "0.1.0"
+description = """
+CTrees toolkit for geospatial analysis and forest carbon monitoring.
+Core features include xarray-based analysis tools.
+Pro features include ArrayLake integration (requires API key).
+"""
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["xarray", "geospatial", "zonal-statistics", "carbon", "biomass"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+authors = [
+    { name = "Naomi Provost", email = "nprovost@ctrees.org" },
+]
+
+
+dependencies = [
+    "xarray>=2023.11.0",
+    "rioxarray>=0.15.0",
+    "numpy>=1.26.2",
+    "pandas>=2.1.4",
+    "geopandas>=0.14.1",
+    "shapely>=2.0.2",
+    "pyproj>=3.6.1",
+    "scipy>=1.7.3"
+]
+
+[project.optional-dependencies]
+interactive = [
+    "ipykernel>=6.27.1",
+    "ipyleaflet>=0.17.4",
+]
+parallel = [
+    "dask>=2023.12.1",
+    "distributed>=2023.12.1",
+]
+pro = [
+    "arraylake>=0.15.0",
+    "icechunk>=0.2.0",
+    "zarr==3.0.3",
+    "python-dotenv>=1.0.0",
+]
+
+all = [
+    "ctreeskit[interactive,parallel,pro]",
+]
+
+[project.urls]
+Homepage = "https://github.com/ctrees-products/arraylake-tools"
+Repository = "https://github.com/ctrees-products/arraylake-tools.git"
+Documentation = "https://github.com/ctrees-products/arraylake-tools#readme"
+"Bug Tracker" = "https://github.com/ctrees-products/arraylake-tools/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]  # Add this to ensure tests can import package
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ctreeskit"]  
+
+[tool.hatch.build]
+packages = ["ctreeskit"]
