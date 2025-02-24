@@ -59,7 +59,8 @@ class XrSpatialProcessor:
         base_da: xr.DataArray,
         geom_source: Optional[Union[str, gpd.GeoDataFrame]] = None,
         dissolve: bool = True,
-        unit: Union[str, AreaUnit] = "ha"
+        unit: Union[str, AreaUnit] = "ha",
+        generate_masks=True
     ):
         """
         Initialize SpatialProcessor with a base dataset and optional geometry.
@@ -90,6 +91,8 @@ class XrSpatialProcessor:
         self.unit = Units.get_unit(unit)
         self.geom = None
         self.geom_bbox = None
+        self.binary_mask = None  # Initialize mask attribute
+        self.da_clipped = None  # Initialize clipped data attribute
 
         if geom_source is not None:
             # Handle different input types
@@ -121,6 +124,12 @@ class XrSpatialProcessor:
                 self.geom = [geometry]  # Always store as list
             else:
                 self.geom = gdf.geometry.tolist()  # Already a list
+            if generate_masks:
+                # Pre-compute binary mask using optimized rasterization
+                self.binary_mask = self._create_fast_binary_mask()
+
+                # Pre-compute clipped data using the binary mask
+                self.da_clipped = self._create_fast_clipped_data()
 
     def reproject_match_target_da(self, target_da: xr.DataArray) -> xr.DataArray:
         """
@@ -142,6 +151,57 @@ class XrSpatialProcessor:
         )
 
         return reprojected
+
+    def _create_fast_binary_mask(self) -> xr.DataArray:
+        """Internal method for fast binary mask creation clipped to geometry bounds"""
+        if self.geom_bbox is None:
+            raise ValueError("No geometry bounds available")
+
+        # Get bbox coordinates
+        minx, miny, maxx, maxy = self.geom_bbox
+
+        # Slice the DataArray to bbox extent first
+        da_subset = self.da.sel(
+            x=slice(minx, maxx),
+            y=slice(maxy, miny)  # Note: y is typically in descending order
+        )
+
+        # Get dimensions and transform for the subset
+        height = da_subset.rio.height
+        width = da_subset.rio.width
+        transform = da_subset.rio.transform()
+
+        # Fast rasterization with minimal parameters
+        rasterized = features.rasterize(
+            [(geom, 1) for geom in self.geom],
+            out_shape=(height, width),
+            transform=transform,
+            fill=0,
+            dtype=np.uint8,
+            all_touched=True,
+            merge_alg=MergeAlg.replace
+        )
+
+        return xr.DataArray(
+            rasterized,
+            dims=('y', 'x'),
+            coords={
+                'y': da_subset.y,
+                'x': da_subset.x
+            }
+        )
+
+    def _create_fast_clipped_data(self) -> xr.DataArray:
+        """Internal method for fast data clipping"""
+        # Direct masking without interpolation when possible
+        # Get bbox coordinates
+        minx, miny, maxx, maxy = self.geom_bbox
+
+        da_subset = self.da.sel(
+            x=slice(minx, maxx),
+            y=slice(maxy, miny))
+
+        return da_subset.where(self.binary_mask == 1, 0)
 
     def create_binary_geom_mask_da(
         self,
@@ -167,52 +227,102 @@ class XrSpatialProcessor:
         if self.geom is None:
             raise ValueError(
                 "No geometry available. Initialize with geometry or use process_geometry first.")
+        # Use pre-computed mask if available and not fitting to geometry
+        if fit_to_geometry and self.binary_mask is not None:
+            return self.binary_mask
 
-        if fit_to_geometry:
-            bounds = self.geom_bbox
-            resolution = abs(self.da.rio.resolution()[0])
-            width = int((bounds[2] - bounds[0]) / resolution)
-            height = int((bounds[3] - bounds[1]) / resolution)
-            transform = Affine(resolution, 0, bounds[0],
-                               0, -resolution, bounds[3])
-        else:
-            height = self.da.rio.height
-            width = self.da.rio.width
-            transform = self.da.rio.transform()
+        if fit_to_geometry and self.binary_mask is None:
+            self.binary_mask = self._create_fast_binary_mask()
+            return self.binary_mask
 
-        # Rasterize using rasterio.features
+        # Otherwise create new mask
+        height = self.da.rio.height
+        width = self.da.rio.width
+        transform = self.da.rio.transform()
+
         rasterized = features.rasterize(
-            shapes=[(geom, 1) for geom in self.geom],
+            [(geom, 1) for geom in self.geom],
             out_shape=(height, width),
             transform=transform,
             fill=0,
+            dtype=np.uint8,
             all_touched=True,
-            dtype=np.uint8
+            merge_alg=MergeAlg.replace
         )
 
-        # Create coordinates
-        if fit_to_geometry:
-            y_coords = np.arange(height) * (-resolution) + bounds[3]
-            x_coords = np.arange(width) * resolution + bounds[0]
-        else:
-            y_coords = self.da.y
-            x_coords = self.da.x
+        coords = {
+            'y': self.da.y,
+            'x': self.da.x
+        }
 
-        # Create DataArray
+        # Create DataArray with appropriate coordinates
         result = xr.DataArray(
             rasterized,
             dims=('y', 'x'),
-            coords={
-                'y': y_coords,
-                'x': x_coords
-            },
+            coords=coords,
             attrs={'_FillValue': 0}
         )
 
-        # Copy CRS
+        # Copy CRS from base dataset
         result.rio.write_crs(self.da.rio.crs, inplace=True)
 
         return result
+        # Create coordinates
+        # if fit_to_geometry:
+        #     y_coords = np.arange(height) * (-resolution) + bounds[3]
+        #     x_coords = np.arange(width) * resolution + bounds[0]
+        # else:
+        #     y_coords = self.da.y
+        #     x_coords = self.da.x
+        #        # Create DataArray
+        # result = xr.DataArray(
+        #     rasterized,
+        #     dims=('y', 'x'),
+        #     coords={
+        #         'y': y_coords,
+        #         'x': x_coords
+        #     },
+        #     attrs={'_FillValue': 0}
+        # )
+        # # # Copy CRS
+        # result.rio.write_crs(self.da.rio.crs, inplace=True)
+
+        # return result
+    def create_weighted_geom_mask_da_v2(self) -> xr.DataArray:
+        """Precise calculation of geometry overlap proportions"""
+        if self.geom is None:
+            raise ValueError("No geometry available")
+
+        # Get binary mask first for efficiency
+        binary_mask = self.create_binary_geom_mask_da()
+        transform = binary_mask.rio.transform()
+
+        # Vectorized approach for initial mask
+        shapes = [(geom, 1) for geom in self.geom]
+        height, width = binary_mask.shape
+
+        # Use higher precision float64 for intersection calculations
+        weights = np.zeros((height, width), dtype=np.float64)
+        pixel_area = abs(transform.a * transform.e)
+
+        # Only process pixels that intersect (optimization)
+        y_idx, x_idx = np.nonzero(binary_mask.data)
+        for y, x in zip(y_idx, x_idx):
+            x_min, y_min = transform * (x, y)
+            x_max, y_max = transform * (x + 1, y + 1)
+            pixel_geom = box(x_min, y_min, x_max, y_max)
+
+            # Calculate precise intersection
+            total_intersection = sum(geom.intersection(
+                pixel_geom).area for geom in self.geom)
+            weights[y, x] = min(total_intersection / pixel_area, 1.0)
+
+        return xr.DataArray(
+            weights,
+            coords=binary_mask.coords,
+            dims=('y', 'x'),
+            attrs={'units': 'proportion'}
+        )
 
     def create_weighted_geom_mask_da(self) -> xr.DataArray:
         """
@@ -350,9 +460,14 @@ class XrSpatialProcessor:
         # Calculate areas
         areas = self.create_area_mask_da(input_projection)
 
-        # Multiply areas by weights and mask out non-intersecting pixels
-        weighted_areas = areas * weights
-
+        # Use masked operations for better precision
+        mask = weights > 0
+        weighted_areas = xr.where(
+            mask,
+            # Use higher precision for multiplication
+            areas * weights.astype(np.float64),
+            0
+        )
         # Update attributes
         weighted_areas.attrs.update({
             'units': self.unit.symbol,
