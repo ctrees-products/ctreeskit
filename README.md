@@ -1,6 +1,6 @@
 # CTrees Tools
 
-## Open Source Components (ctreeskit-core)
+## (( TO BE IMPLEMENTED )) Open Source Components (ctreeskit-core)
 ```bash
 pip install ctreeskit
 ```
@@ -52,14 +52,14 @@ pip install ctreeskit
 
 ### From GitHub
 ```bash
-pip install git+https://github.com/ctrees-products/arraylake-tools.git@xr_analyzer
+pip install git+https://github.com/ctrees-products/ctreeskit.git
 ```
 
 ### Development Installation
 For development, you can install with all dependencies:
 ```bash
 # Clone the repository
-git clone https://github.com/ctrees-products/arraylake-tools.git
+git clone https://github.com/ctrees-products/ctreeskit.git
 cd ctreeskit
 
 # Create and activate virtual environment
