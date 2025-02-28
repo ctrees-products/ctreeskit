@@ -1,7 +1,7 @@
 from typing import Dict, List, Union, Optional, Tuple
 import xarray as xr
 import numpy as np
-from .common import Units, AreaUnit
+from common import Units, AreaUnit
 
 
 class XrZonalStats:
@@ -186,7 +186,7 @@ class XrZonalStats:
             scaling_factor: Optional scaling factor to apply to values
 
         Returns:
-            Dictionary with basic statistics (count, sum, mean, std, min, max, median)
+            Dictionary with basic statistics (count, sum, mean, std, min, max)
         """
         if self.continuous_da is None:
             raise ValueError("Continuous data array is required")
@@ -199,7 +199,6 @@ class XrZonalStats:
                 "std": None,
                 "min": None,
                 "max": None,
-                "median": None
             }
 
         valid_data = self.continuous_da.where(self.continuous_da > 0)
@@ -213,7 +212,6 @@ class XrZonalStats:
             "std": float(valid_data.std()),
             "min": float(valid_data.min()),
             "max": float(valid_data.max()),
-            "median": float(valid_data.median())
         }
 
     def calculate_agb_stats(self, scaling_factor=AGB_SCALING_FACTOR) -> Dict[str, float]:

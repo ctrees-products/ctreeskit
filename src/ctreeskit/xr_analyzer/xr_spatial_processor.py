@@ -4,11 +4,14 @@ from pyproj import Proj
 import xarray as xr
 import numpy as np
 from shapely.geometry import box
-from rasterio.enums import Resampling, MergeAlg
+from shapely.geometry.base import BaseGeometry
 import rioxarray as rio
+
+from rasterio.enums import Resampling, MergeAlg
 from rasterio import features
 from affine import Affine
-from .common import Units, AreaUnit
+from common import Units, AreaUnit
+import dask.array as dr  # make sure this import is present
 
 
 class XrSpatialProcessor:
@@ -57,7 +60,8 @@ class XrSpatialProcessor:
     def __init__(
         self,
         base_da: xr.DataArray,
-        geom_source: Optional[Union[str, gpd.GeoDataFrame]] = None,
+        geom_source: Optional[Union[str,
+                                    gpd.GeoDataFrame, BaseGeometry]] = None,
         dissolve: bool = True,
         unit: Union[str, AreaUnit] = "ha"
     ):
@@ -65,41 +69,41 @@ class XrSpatialProcessor:
         Initialize SpatialProcessor with a base dataset and optional geometry.
 
         Args:
-            base_da (xr.DataArray): Base dataset for processing
-            geom_source (Union[str, gpd.GeoDataFrame], optional): Input geometry as either:
-                - Path to GeoJSON/GPKG file (str)
-                - GeoDataFrame (gpd.GeoDataFrame)
-            dissolve (bool): Whether to dissolve all geometries into one (default: True)
+            base_da (xr.DataArray): Base dataset for processing.
+            geom_source (Optional[Union[str, gpd.GeoDataFrame, BaseGeometry]]): Input geometry
+                as either:
+                    - Path to a GeoJSON/GPKG file (str)
+                    - GeoDataFrame (gpd.GeoDataFrame)
+                    - A single Shapely geometry (BaseGeometry)
+            dissolve (bool): Whether to dissolve all geometries into one (default: True).
+            unit (Union[str, AreaUnit]): Desired area unit (default = "ha").
 
         Raises:
-            ValueError: If CRS don't match or geometry is invalid
+            ValueError: If CRS doesn't match or geometry is invalid.
 
         Example:
-            ```python
-            # Initialize with just base dataset
-            processor = XrSpatialProcessor(base_dataset)
-
-            # Initialize with geometry file
-            processor = XrSpatialProcessor("area.geojson", dissolve=True)
-
-            # Initialize with GeoDataFrame
-            processor = XrSpatialProcessor(gdf, dissolve=False)
-            ```
+            processor = XrSpatialProcessor(base_dataset, geom_source="area.geojson", dissolve=True)
         """
         self.da = base_da.squeeze()
         self.unit = Units.get_unit(unit)
         self.geom = None
         self.geom_bbox = None
+        self.crs = self.da.rio.crs
 
         if geom_source is not None:
-            # Handle different input types
+            # If geom_source is a string, assume it's a file path
             if isinstance(geom_source, str):
                 gdf = gpd.read_file(geom_source)
+            # If a GeoDataFrame is provided, use a copy of it
             elif isinstance(geom_source, gpd.GeoDataFrame):
                 gdf = geom_source.copy()
+            # If a single Shapely geometry is provided
+            elif isinstance(geom_source, BaseGeometry):
+                gdf = gpd.GeoDataFrame(
+                    geometry=[geom_source], crs=self.da.rio.crs)
             else:
                 raise ValueError(
-                    "Geometry source must be a file path or GeoDataFrame")
+                    "geom_source must be a file path, GeoDataFrame, or a Shapely geometry")
 
             # Ensure GeoDataFrame has CRS
             if gdf.crs is None:
@@ -350,8 +354,15 @@ class XrSpatialProcessor:
         # Calculate areas
         areas = self.create_area_mask_da(input_projection)
 
+        areas_clipped = areas.interp(
+            x=weights.x,
+            y=weights.y,
+            method='nearest',
+            kwargs={'fill_value': 0}
+        )
+
         # Multiply areas by weights and mask out non-intersecting pixels
-        weighted_areas = areas * weights
+        weighted_areas = areas_clipped * weights
 
         # Update attributes
         weighted_areas.attrs.update({
