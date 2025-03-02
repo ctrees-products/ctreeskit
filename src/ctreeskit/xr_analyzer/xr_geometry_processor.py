@@ -459,6 +459,7 @@ class XrGeometryProcessor:
         # Get weights and area from raster (note: area calculation is handled in the raster class below)
         # circular dependency; adjust if needed
         mask_type = MaskType.BINARY if binary else MaskType.WEIGHTED
+        unit = Units.get_unit(unit)
         cached = self._get_cached_mask(raster)
         if cached and cached[1] == mask_type:
             base_mask = cached[0]
