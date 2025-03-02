@@ -2,19 +2,19 @@ from dataclasses import dataclass
 from typing import Union, Optional, Dict, ClassVar
 
 
+class MaskType:
+    """Enumeration of mask types."""
+    BINARY: str = "binary"
+    WEIGHTED: str = "weighted"
+    AREA: str = "area"
+
+
 @dataclass
 class AreaUnit:
     """Area unit configuration."""
     name: str
     conversion: float  # conversion factor from m²
     symbol: str
-
-
-class MaskType:
-    """Enumeration of mask types."""
-    BINARY: str = "binary"
-    WEIGHTED: str = "weighted"
-    AREA: str = "area"
 
 
 class Units:
