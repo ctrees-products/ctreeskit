@@ -102,167 +102,132 @@ areas = processor.create_area_ha_da()
 
 
 ### API Reference
-# XrSpatialProcessor
+# XrGeometryProcessor
 
-A class for processing spatial data with xarray DataArrays, including area calculations and geometry intersections.
+A class for processing geometries with xarray DataArrays, focusing on mask generation and area calculations.
 
 ## Key Methods
-- `reproject_match_target_da`: Match resolution and extent of target dataset
-- `create_binary_geom_mask_da`: Create binary mask (1 inside geometry, 0 outside)
-- `create_weighted_geom_mask_da`: Calculate intersection proportions (0-1)
-- `create_area_mask_da`: Calculate grid cell areas with flexible units
-- `create_weighted_area_geom_mask_da`: Calculate geometry-weighted areas with units (`weighted_geom_mask` * `area_mask`)
-- `create_clipped_da_vector`: Clip using vector geometry
-- `create_clipped_da_raster`: Clip using raster mask
+- `clip_raster_to_geom`: Clip raster using geometry
+- `create_binary_geom_mask`: Create binary (0/1) mask
+- `create_proportion_geom_mask`: Calculate intersection proportions
+- `create_area_geom_mask`: Calculate geometry-weighted areas
+- `create_pixel_areas`: Calculate grid cell areas
+- `subset_to_bbox`: Subset to geometry's bounding box
 
 ## Key Features
-- Calculate pixel intersection proportions with geometries
-- Compute grid cell areas with flexible unit handling (m², ha, km²)
-- Handle coordinate transformations and projections
-- Mask and weight by geometry intersections
+- Flexible geometry handling (single or multiple)
+- Area calculations with unit conversion
+- Intersection proportion calculations
+- Memory-efficient processing
+- Optional Dask integration for large datasets
 
-## Notes
-- Area calculations support multiple units (m², ha, km²)
-- Units are preserved in output DataArrays
-- Geometries must be in the same CRS as the base dataset
-- Area calculations assume planar coordinates
-- Geometry processing handles both single and multiple features
-
-## Usage
+## Basic Usage
 
 ```python
-from ctreeskit import XrSpatialProcessor
+from ctreeskit import XrGeometryProcessor
 
-# Initialize with base dataset only
-processor = XrSpatialProcessor(base_dataset)
-
-# Initialize with geometry file
-processor = XrSpatialProcessor(
-    base_dataset,
+# Initialize with geometry
+processor = XrGeometryProcessor(
     geom_source="area.geojson",
     dissolve=True
 )
 
-# get attributes
-da = processor.da
-geom = processor.geom[0]
-bbox = processor.geom_bbox
+# Create masks
+binary_mask = processor.create_binary_geom_mask(raster)
+weighted_mask = processor.create_proportion_geom_mask(raster)
 
-# Calculate masked areas
-masked = processor.create_binary_geom_mask_da()
-weights = processor.create_weighted_geom_mask_da()
-areas = processor.create_weighted_area_geom_mask_da()
+# Calculate areas
+pixel_areas = processor.create_pixel_areas(raster, unit=Units.HA)
+weighted_areas = processor.create_area_geom_mask(raster, binary=False)
 ```
 
 ## Class Methods
 
-### init
-### `__init__(base_da, geom_source=None, dissolve=True)`
+### `__init__(geom_source, dissolve=True)`
 
-Initialize SpatialProcessor with a base dataset and optional geometry.
+Initialize GeometryProcessor with input geometry.
 
 **Parameters:**
-- `base_da` (xr.DataArray): Base dataset for processing
-- `geom_source` (Union[str, gpd.GeoDataFrame], optional): Input geometry as either:
+- `geom_source` (Union[str, gpd.GeoDataFrame]): Input geometry as either:
   - Path to GeoJSON/GPKG file (str)
   - GeoDataFrame (gpd.GeoDataFrame)
 - `dissolve` (bool): Whether to dissolve all geometries into one (default: True)
 
 **Attributes:**
-- `da` (xr.DataArray): The base dataset for processing
-- `geom` (List[shapely.Geometry]): List of geometries for processing
-  - Single geometry if dissolve=True
-  - Multiple geometries if dissolve=False
-  - None if no geometry provided
-- `geom_bbox` (tuple): Bounds of geometry (minx, miny, maxx, maxy)
-  - Used for efficient clipping operations
-  - None if no geometry provided
+- `geom` (List[shapely.Geometry]): List of geometries
+- `geom_crs` (CRS): Coordinate reference system
+- `geom_bbox` (tuple): Bounds (minx, miny, maxx, maxy)
+- `geom_area` (float): Total area in square meters
+- `geom_mask` (xr.DataArray): Current mask (if generated)
+- `mask_type` (MaskType): Type of current mask
 
-**Raises:**
-- ValueError: If CRS don't match between dataset and geometry
-- ValueError: If geometry source has no CRS information
-- ValueError: If base dataset has no CRS information
-- ValueError: If geometry source is not a file path or GeoDataFrame
-
-**Example:**
-```python
-# Initialize with file path
-processor = XrSpatialProcessor(
-    base_dataset,
-    geom_source="area.geojson",
-    dissolve=True
-)
-
-# Access attributes
-print(processor.geom_bbox)  # Returns (minx, miny, maxx, maxy)
-print(len(processor.geom))  # Returns 1 if dissolved, N if not dissolved
-```
-
-### `reproject_match_target_da(target_da)`
-
-Reproject and resample source DataArray to match target DataArray's resolution and extent.
-
-**Parameters:**
-- `target_da` (xr.DataArray): Target data whose grid to match
-
-**Returns:**
-- xr.DataArray: Reprojected data matching target grid
-
-### `create_binary_geom_mask_da(fit_to_geometry=True)`
+### `create_binary_geom_mask(raster)`
 
 Create binary mask from geometry.
 
 **Parameters:**
-- `fit_to_geometry` (bool): Match geometry extent (default: True)
+- `raster` (xr.DataArray): Reference raster for output grid
 
 **Returns:**
 - xr.DataArray: Binary mask (1=inside geometry, 0=outside)
 
-### `create_weighted_geom_mask_da()`
+### `create_proportion_geom_mask(raster, pixel_ratio=0.001, overwrite=False)`
 
-Calculate pixel intersection proportions.
+Calculate intersection proportions between geometry and pixels.
+
+**Parameters:**
+- `raster` (xr.DataArray): Reference raster for output resolution and extent
+- `pixel_ratio` (float): Minimum pixel/geometry area ratio (default: 0.001)
+  - Represents minimum allowed ratio of pixel area to total geometry area
+  - Default threshold is 0.1% (0.001) of geometry area
+  - Ratios below this threshold trigger a warning and fallback to binary mask
+- `overwrite` (bool): Skip ratio check if True (default: False)
+  - When False: Enforces pixel_ratio check and may fallback to binary mask
+  - When True: Calculates proportions regardless of pixel/geometry size ratio
+  - Use True when working with very large geometries or fine resolution rasters
+
+**Returns:**
+- xr.DataArray: Intersection proportions (0-1)
+  - 1.0: Pixel fully within geometry
+  - 0.0: Pixel outside geometry
+  - 0.0-1.0: Proportion of pixel intersecting geometry
+
+**Notes:**
+- Performance Warning: Computing exact intersection proportions is computationally intensive
+- Memory Warning: Large rasters with small pixels relative to geometry may require significant memory
+- Fallback Behavior: When pixel_ratio check fails:
+  1. Warning is issued showing actual ratio vs threshold
+  2. Binary mask is used instead of proportional mask
+  3. self.mask_type is set to BINARY
+- Use `overwrite=True` to force proportion calculation regardless of ratio
 
 **Returns:**
 - xr.DataArray: Intersection proportions (0-1)
 
-### `create_area_mask_da(input_projection=4236, area_unit="ha")`
+### `create_area_geom_mask(raster, binary=True, unit=Units.M2, input_projection=4236)`
 
-Calculate grid cell areas with flexible unit specification.
-
-**Parameters:**
-- `input_projection` (int): EPSG code (default: 4236)
-- `area_unit` (str | Units): Output unit (default: "ha")
-  - Accepted values: "m2", "ha", "km2" or Units enum
-
-**Returns:**
-- xr.DataArray: Areas in specified unit with unit information in attrs
-
-
-### `create_weighted_area_geom_mask_da(input_projection=4236, area_unit="ha")`
-
-Calculate geometry-weighted areas with flexible unit specification.
+Calculate areas for each cell within geometry.
 
 **Parameters:**
-- `input_projection` (int): EPSG code (default: 4236)
-- `area_unit` (str | Units): Output unit (default: "ha")
-  - Accepted values: "m2", "ha", "km2" or Units enum
+- `raster` (xr.DataArray): Input raster
+- `binary` (bool): Use binary or weighted mask
+- `unit` (Units): Output unit (m², ha, km²)
+- `input_projection` (int): EPSG code for calculations
 
 **Returns:**
-- xr.DataArray: Weighted areas in specified unit with unit information in attrs
+- xr.DataArray: Cell areas in specified unit
 
-### `create_clipped_da_vector()`
+### `create_pixel_areas(raster, unit=Units.M2, input_projection=4236)`
 
-Clip using vector geometry.
+Calculate area of each grid cell (create clipped to geometry)
 
-**Returns:**
-- xr.DataArray: Clipped dataset
-
-### `create_clipped_da_raster()`
-
-Clip using binary mask.
+**Parameters:**
+- `raster` (xr.DataArray): Input raster
+- `unit` (Units): Output unit
+- `input_projection` (int): EPSG code
 
 **Returns:**
-- xr.DataArray: Clipped dataset
+- xr.DataArray: Grid cell areas
 
 
 # XrZonalStats

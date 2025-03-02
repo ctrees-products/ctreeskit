@@ -10,6 +10,13 @@ class AreaUnit:
     symbol: str
 
 
+class MaskType:
+    """Enumeration of mask types."""
+    BINARY: str = "binary"
+    WEIGHTED: str = "weighted"
+    AREA: str = "area"
+
+
 class Units:
     """Handle unit conversions for spatial calculations."""
 
