@@ -1,6 +1,7 @@
 from .xr_analyzer.common import Units
 from .xr_analyzer.xr_spatial_processor import XrSpatialProcessor
 from .xr_analyzer.xr_zonal_stats import XrZonalStats
+from .xr_analyzer.xr_geometry_processor import XrGeometryProcessor
 
 # # Pro feature detection
 # try:

@@ -52,7 +52,7 @@ pip install ctreeskit
 
 ### From GitHub
 ```bash
-pip install git+https://github.com/ctrees-products/ctreeskit.git
+pip install git+https://github.com/ctrees-products/ctreeskit.git@mask_generator
 ```
 
 ### Development Installation
