@@ -271,11 +271,18 @@ class XrGeometryProcessor:
             from_disk=True  # More memory efficient
         )
 
-        # If using weighted mask, apply the weights
-        if not binary and self.geom_mask is not None:
+        # If using weighted mask, apply the weights from cache
+        if not binary:
+            mask_type = MaskType.WEIGHTED
+            cached = self._get_cached_mask(raster)
+            if cached and cached[1] == mask_type:
+                weights = cached[0]
+            else:
+                weights = self.create_proportion_geom_mask(raster)
+
             # Ensure mask and result have same coordinates
-            result = result.rio.reproject_match(self.geom_mask)
-            result = result * self.geom_mask
+            result = result.rio.reproject_match(weights)
+            result = result * weights
 
         return result
 
@@ -374,15 +381,12 @@ class XrGeometryProcessor:
         Uses exact geometry intersection calculations.
         Sets self.geom_mask and self.mask_type to WEIGHTED.
         """
-        # Use the binary mask as the basis.
+        # Use existing caching and binary mask creation
         cached = self._get_cached_mask(raster)
         if cached and cached[1] == MaskType.WEIGHTED and not overwrite:
             return cached[0]
 
-        if self.geom_mask is None:
-            binary_mask = self.create_binary_geom_mask(raster)
-        else:
-            binary_mask = self.geom_mask
+        binary_mask = self.create_binary_geom_mask(raster)
 
         raster_transform = binary_mask.rio.transform()
         pixel_size = abs(raster_transform.a * raster_transform.e)
@@ -397,8 +401,6 @@ class XrGeometryProcessor:
                     "Use overwrite=True to utilize porportion-based mask computation.",
                     UserWarning
                 )
-                self.geom_mask = binary_mask
-                self.mask_type = MaskType.BINARY
                 return binary_mask
 
         # Loop over nonzero pixels:
@@ -419,7 +421,7 @@ class XrGeometryProcessor:
                    'description': 'Pixel intersection proportions (0-1)'}
         )
         self._cache_mask(raster, result, MaskType.WEIGHTED)
-        return self.geom_mask
+        return result
 
     # Area calculations
 
@@ -476,7 +478,7 @@ class XrGeometryProcessor:
 
         return weighted_areas
 
-    def create_proportional_geom_mask_dask(self, raster: xr.DataArray, pixel_ratio=.001, overwrite=False) -> xr.DataArray:
+    def create_proportion_geom_mask_dask(self, raster: xr.DataArray, pixel_ratio=.001, overwrite=False) -> xr.DataArray:
         """
         Create a weighted mask based on geometry intersection proportions using Dask.
         Parallel version of create_proportion_geom_mask.
