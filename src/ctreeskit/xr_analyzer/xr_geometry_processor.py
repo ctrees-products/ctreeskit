@@ -328,7 +328,7 @@ class XrGeometryProcessor:
             transform=raster_transform,
             fill=0,
             dtype=np.uint8,
-            all_touched=True,
+            all_touched=False,
             merge_alg=MergeAlg.replace
         )
 
@@ -475,6 +475,7 @@ class XrGeometryProcessor:
             'units': unit.symbol,
             'description': f'Geometry-weighted grid cell area in {unit.name}'
         })
+        weighted_areas.rio.write_crs(raster.rio.crs, inplace=True)
         self._cache_mask(raster, weighted_areas, MaskType.AREA)
 
         return weighted_areas
