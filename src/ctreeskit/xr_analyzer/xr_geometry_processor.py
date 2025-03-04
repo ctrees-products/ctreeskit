@@ -13,7 +13,7 @@ from shapely.ops import transform, unary_union
 import dask
 import dask.array as da
 from rasterio.mask import mask
-from pyproj import Proj
+from pyproj import Proj, Geod
 
 import warnings
 
@@ -467,8 +467,8 @@ class XrGeometryProcessor:
             base_mask = (self.create_binary_geom_mask(raster) if binary
                          else self.create_proportion_geom_mask(raster))
         weights = base_mask
-        areas = self.create_pixel_areas(
-            raster, input_projection=input_projection)
+        areas = self.create_pixel_areas_from_degrees(
+            raster)
         mask = weights > 0
         weighted_areas = xr.where(mask, areas * weights.astype(np.float64), 0)
         weighted_areas.attrs.update({
@@ -568,7 +568,83 @@ class XrGeometryProcessor:
 
         return weighted_mask
 
-    def create_pixel_areas(self, raster, unit=Units.M2, input_projection: int = 4236) -> xr.DataArray:
+    def measure(self, lat1, lon1, lat2, lon2):
+        """
+        Compute the geodesic distance between two points using pyproj.Geod.
+        """
+        # Define the WGS84 ellipsoid
+        geod = Geod(ellps="WGS84")
+        _, _, distance = geod.inv(lon1, lat1, lon2, lat2)
+        return distance  # in meters
+
+    def create_pixel_areas_from_degrees(self, spatial_raster: xr.DataArray) -> xr.DataArray:
+        """
+        Calculate the area of each grid cell in a geographic raster (lat/lon).
+
+        Uses pyproj.Geod to compute geodesic distances for accurate pixel area calculations.
+
+        Parameters
+        ----------
+        spatial_raster : xr.DataArray
+            Input raster with "y" (latitude) and "x" (longitude) coordinates.
+
+        Returns
+        -------
+        xr.DataArray
+            Raster of grid cell areas in square meters (m²).
+        """
+        lat_center = spatial_raster.y.values  # Latitudes (assumed sorted north to south)
+        # Longitudes (assumed sorted west to east)
+        lon_center = spatial_raster.x.values
+
+        # Compute latitude and longitude boundaries
+        diff_x = np.diff(lon_center)  # Longitude step sizes
+        diff_y = np.diff(lat_center)  # Latitude step sizes
+
+        x_bounds = np.concatenate([
+            [lon_center[0] - diff_x[0] / 2],
+            lon_center[:-1] + diff_x / 2,
+            [lon_center[-1] + diff_x[-1] / 2]
+        ])
+
+        y_bounds = np.concatenate([
+            [lat_center[0] - diff_y[0] / 2],
+            lat_center[:-1] + diff_y / 2,
+            [lat_center[-1] + diff_y[-1] / 2]
+        ])
+
+        n_y = len(lat_center)
+        n_x = len(lon_center)
+
+        # Compute heights for each row (same across longitude)
+        cell_heights = np.array([
+            self.measure(y_bounds[i], lon_center[0],
+                         y_bounds[i+1], lon_center[0])
+            for i in range(n_y)
+        ])
+
+        # Compute widths at the center latitude of each row
+        y_centers = (y_bounds[:-1] + y_bounds[1:]) / 2
+        cell_widths = np.array([
+            [self.measure(y, x_bounds[j], y, x_bounds[j+1])
+             for j in range(n_x)]
+            for y in y_centers
+        ])
+
+        # Compute area as width × height
+        grid_area = cell_heights[:, None] * cell_widths  # Broadcasting
+
+        return xr.DataArray(
+            grid_area,
+            coords={'y': spatial_raster.y, 'x': spatial_raster.x},
+            dims=['y', 'x'],
+            attrs={
+                'units': 'm²',
+                'description': 'Grid cell area in square meters computed using geodesic distances'
+            }
+        )
+
+    def create_pixel_areas_from_UTM(self, raster, unit=Units.M2, input_projection: int = 3857) -> xr.DataArray:
         """
         Calculate the area of each grid cell in the raster.
 
@@ -627,3 +703,29 @@ class XrGeometryProcessor:
                 'description': f'Grid cell area in {unit.name}'
             }
         )
+
+    def get_grid_area_v2(self, lat_center, lon_center, proj):
+        diff_x = np.diff(lon_center)
+        diff_y = np.diff(lat_center)
+        x_bounds = np.concatenate(
+            [
+                lon_center[0][None] - diff_x[0] / 2,
+                lon_center[:-1] + diff_x / 2,
+                lon_center[-1][None] + diff_x[-1] / 2,
+            ]
+        )
+        y_bounds = np.concatenate(
+            [
+                lat_center[0][None] - diff_y[0] / 2,
+                lat_center[:-1] + diff_y / 2,
+                lat_center[-1][None] + diff_y[-1] / 2,
+            ]
+        )
+        xv, yv = np.meshgrid(x_bounds, y_bounds, indexing="xy")
+
+        p = Proj(f"EPSG:{proj}", preserve_units=False)
+        x2, y2 = p(longitude=xv, latitude=yv)
+        diff_x2 = np.diff(x2, axis=1)
+        diff_y2 = np.diff(y2, axis=0)
+        grid_area = np.abs(diff_x2[:-1, :] * diff_y2[:, :-1])
+        return grid_area
