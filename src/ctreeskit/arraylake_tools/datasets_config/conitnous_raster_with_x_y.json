@@ -1,0 +1,33 @@
+{
+    "dataset_name": "EXAMPLE_DATASET_NAME",
+    "long_name": "Continous Raster with x and y dims",
+    "organization": "ORGANIZATION_NAME",
+    "repo": "ORGANIZATION_NAME/EXAMPLE_DATASET_NAME",
+    "crs": "EPSG:4326",
+    "dim": [
+        "x",
+        "y"
+    ],
+    "groups": {
+        "root": {
+            "continous_var_1": {
+                "s3_path": "{EXAMPLE_S3_PATH}.tif",
+                "is_mosaiced": true,
+                "unit_type": "float",
+                "unit_name": "meters"
+            },
+            "continous_var_2": {
+                "s3_path": "{EXAMPLE_S3_PATH}.tif",
+                "is_mosaiced": true,
+                "unit_type": "float",
+                "unit_name": "meters"
+            },
+            "continous_var_3": {
+                "s3_path": "{EXAMPLE_S3_PATH}.tif",
+                "is_mosaiced": true,
+                "unit_type": "float",
+                "unit_name": "meters"
+            }
+        }
+    }
+}

@@ -1,0 +1,36 @@
+{
+    "dataset_name": "EXAMPLE_DATASET_NAME",
+    "organization": "ORGANIZATION_NAME",
+    "long_name": "Categorical Raster with x, y and time dims",
+    "repo": "ORGANIZATION_NAME/EXAMPLE_DATASET_NAME",
+    "crs": "EPSG:4326",
+    "dim": [
+        "x",
+        "y",
+        "time"
+    ],
+    "groups": {
+        "EXAMPLE_GROUP_NAME": {
+            "time": {
+                "start": "2000-01-01",
+                "end": "2024-01-01",
+                "freq": "YS"
+            },
+            "classification": {
+                "s3_path_prefix": "EXAMPLE_S3_PATH_PREFIX",
+                "s3_path_suffix": "{EXAMPLE_S3_PATH_SUFFIX}.tif",
+                "is_mosaiced": true,
+                "unit_type": "int",
+                "classification_type": "EXAMPLE_CLASSIFICATION_TYPE",
+                "values": {
+                    "0": "VALUE 0 NAME",
+                    "1": "VALUE 1 NAME",
+                    "2": "VALUE 2 NAME",
+                    "3": "VALUE 3 NAME",
+                    "4": "VALUE 4 NAME",
+                    "5": "VALUE 5 NAME"
+                }
+            }
+        }
+    }
+}

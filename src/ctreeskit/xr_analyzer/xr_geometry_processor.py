@@ -1,21 +1,25 @@
-from typing import Union, Optional
-import geopandas as gpd
-import xarray as xr
+# Standard library imports
+import json
+import warnings
+from typing import Union, Optional, List
+
+# Third-party library imports
 import numpy as np
-from shapely.geometry import box
-from rasterio import features
-from rasterio.enums import MergeAlg
-import rioxarray as rio
-from affine import Affine
-from .common import MaskType, Units
-import pyproj
-from shapely.ops import transform, unary_union
+import xarray as xr
 import dask
 import dask.array as da
-from rasterio.mask import mask
+import s3fs
+import pyproj
 from pyproj import Proj, Geod
+from affine import Affine
+from rasterio import features
+from rasterio.enums import MergeAlg
+from shapely.geometry import box, shape
+from shapely.ops import transform, unary_union
+from shapely import BaseGeometry
 
-import warnings
+# Local application/library specific imports
+from .common import MaskType, Units
 
 
 class XrGeometryProcessor:
@@ -29,7 +33,7 @@ class XrGeometryProcessor:
 
     def __init__(
         self,
-        geom_source: Union[str, gpd.GeoDataFrame],
+        geom_source: Union[str, BaseGeometry, List[BaseGeometry]],
         dissolve: bool = True
     ):
         geom, crs, bbox = self._initialize_geometry(geom_source, dissolve)
@@ -64,25 +68,67 @@ class XrGeometryProcessor:
         self._mask_cache[key] = (mask, mask_type)
 
     # Core geometry operations
-
     def _initialize_geometry(self, geom_source, dissolve):
-        """Load and validate geometry source."""
+        """Load and validate geometry source.
+
+        Parameters
+        ----------
+        geom_source : str or list or BaseGeometry
+            Either a file path (local or S3 URI) to a GeoJSON file,
+            a list of Shapely geometries, or a single Shapely geometry.
+        dissolve : bool
+            If True, all geometries are dissolved into a single geometry.
+
+        Returns
+        -------
+        tuple: (self.geom, crs, total_bounds)
+            self.geom: list of Shapely geometries (dissolved if requested)
+            crs: the coordinate reference system (string)
+            total_bounds: tuple (minx, miny, maxx, maxy) spanning all geometries
+        """
+        geometries = None
+        crs = None
+
+        # Case 1: geom_source is a file path (local or S3) containing GeoJSON.
         if isinstance(geom_source, str):
-            gdf = gpd.read_file(geom_source)
-        elif isinstance(geom_source, gpd.GeoDataFrame):
-            gdf = geom_source.copy()
+            if geom_source.startswith("s3://"):
+                fs = s3fs.S3FileSystem()
+                with fs.open(geom_source, 'r') as f:
+                    geojson_dict = json.load(f)
+            else:
+                with open(geom_source, 'r') as f:
+                    geojson_dict = json.load(f)
+            geometries = [shape(feature['geometry'])
+                          for feature in geojson_dict.get('features', [])]
+            crs = geojson_dict.get('crs', {}).get(
+                'properties', {}).get('name', None)
+            if crs is None:
+                raise ValueError("Input geometry has no CRS information")
+
+        # Case 2a: geom_source is a list of Shapely geometries.
+        elif isinstance(geom_source, list) and all(isinstance(g, BaseGeometry) for g in geom_source):
+            geometries = geom_source
+            crs = getattr(self, 'geom_crs', "EPSG:4326")
+
+        # Case 2b: geom_source is a single Shapely geometry.
+        elif isinstance(geom_source, BaseGeometry):
+            geometries = [geom_source]
+            crs = getattr(self, 'geom_crs', "EPSG:4326")
+
         else:
             raise ValueError(
-                "Geometry source must be a file path or GeoDataFrame")
+                "Geometry source must be a file path, a list of Shapely geometries, or a Shapely geometry")
 
-        if gdf.crs is None:
-            raise ValueError("Input geometry has no CRS information")
-        # Store geometry as a list for consistency.
+        # Apply dissolution if requested.
         if dissolve:
-            self.geom = [gdf.geometry.unary_union]
+            union_geom = unary_union(geometries)
+            self.geom = [union_geom]
+            total_bounds = union_geom.bounds
         else:
-            self.geom = gdf.geometry.tolist()
-        return self.geom, gdf.crs, gdf.total_bounds
+            self.geom = geometries
+            total_bounds = unary_union(geometries).bounds
+
+        return self.geom, crs, total_bounds
 
     def _calculate_geometry_area(self, target_epsg: int = 3857) -> float:
         """
@@ -198,7 +244,7 @@ class XrGeometryProcessor:
         # Reassign coordinates from spatial_raster:
         return da.assign_coords({'y': spatial_raster.y, 'x': spatial_raster.x})
 
-    def subset_to_bbox(self, raster: xr.DataArray, drop_time=False) -> xr.DataArray:
+    def clip_to_bbox(self, raster: xr.DataArray, drop_time=False) -> xr.DataArray:
         """
         Subset input raster to the geometry's bounding box.
 
@@ -233,7 +279,7 @@ class XrGeometryProcessor:
 
     # Mask generation
 
-    def clip_raster_to_geom(self, raster: xr.DataArray, binary: bool = True) -> xr.DataArray:
+    def clip_to_geom(self, raster: xr.DataArray, binary: bool = True) -> xr.DataArray:
         """
         Clip the provided raster using the stored geometry.
 
@@ -257,7 +303,7 @@ class XrGeometryProcessor:
         Maintains CRS and spatial properties of the input raster.
         """
         # Prepare spatial subset if needed
-        spatial_raster = self.subset_to_bbox(raster)
+        spatial_raster = self.clip_to_bbox(raster)
 
         # Convert geometries to GeoJSON format for clipping
         geoms = [g.__geo_interface__ for g in self.geom]
@@ -266,7 +312,7 @@ class XrGeometryProcessor:
         result = spatial_raster.rio.clip(
             geoms,
             crs=self.geom_crs,
-            all_touched=True,
+            all_touched=False,
             drop=True,
             from_disk=True  # More memory efficient
         )
@@ -304,7 +350,7 @@ class XrGeometryProcessor:
 
         Notes
         -----
-        Uses rasterio's rasterize function with all_touched=True.
+        Uses rasterio's rasterize function with all_touched=False.
         Mask is aligned to input raster's coordinate system.
         Sets self.geom_mask and self.mask_type to BINARY.
         """
@@ -315,7 +361,7 @@ class XrGeometryProcessor:
         if cached and cached[1] == MaskType.BINARY:
             return cached[0]
         # Work on the spatial subset (drop time if present)
-        spatial_raster = self.subset_to_bbox(raster, True)
+        spatial_raster = self.clip_to_bbox(raster, True)
 
         # Get clipping parameters and the spatial subset corresponding to the bbox.
         _, _, out_shape, raster_transform, subset = self._extract_spatial_parameters(
@@ -670,7 +716,7 @@ class XrGeometryProcessor:
         Projects coordinates for accurate area calculation.
         Independent of geometry (full raster extent).
         """
-        spatial_raster = self.subset_to_bbox(raster)
+        spatial_raster = self.clip_to_bbox(raster)
         lat_center = spatial_raster.y.values
         lon_center = spatial_raster.x.values
 

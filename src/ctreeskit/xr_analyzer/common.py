@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Union, Optional, Dict, ClassVar
+from typing import Union, ClassVar
 
 
 class MaskType:
