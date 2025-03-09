@@ -19,6 +19,41 @@ from common import ArraylakeDatasetConfig
 
 
 class ArraylakeRepoInitializer:
+    """
+    A class for initializing an Arraylake repository from a configuration.
+
+    This class loads configuration information (either from S3 via a dataset name
+    or directly from a dictionary) and sets up an Arraylake repository accordingly.
+    It also handles spatial subsetting using geometry from a GeoJSON file to define
+    a bounding box. Additionally, it creates an xarray Dataset schema for each group
+    defined in the configuration and writes the dataset (e.g., to Zarr).
+
+    Attributes
+    ----------
+    config : Dict[str, Any]
+        Dataset configuration dictionary.
+    dataset_name : str
+        The name of the dataset as specified in the configuration.
+    repo_name : str
+        Repository name built from organization and dataset name.
+    crs : str
+        Coordinate Reference System for spatial operations (default is 'EPSG:4326').
+    client : arraylakeClient
+        Arraylake API client used for communicating with the Arraylake service.
+    repo : Repository object
+        Repository object retrieved from the Arraylake client.
+    session : Session object
+        A writable session for updating the repository.
+    groups : Dict[str, Any]
+        Configuration for each group (logical grouping of variables).
+    dims : list
+        List of dataset dimension names (e.g., ['x', 'y'] or including 'time').
+    has_time : bool
+        Flag indicating whether the dataset includes a time dimension.
+    bbox : tuple or None
+        Spatial bounding box (minx, miny, maxx, maxy) for subsetting, if provided.
+    """
+
     def __init__(
         self,
         token: str,
@@ -26,57 +61,84 @@ class ArraylakeRepoInitializer:
         config_dict: Optional[Dict[str, Any]] = None,
         geojson_path: Optional[str] = None,
     ):
-        """Initialize Initializer with either dataset_name or config dictionary.
+        """
+        Initialize the ArraylakeRepoInitializer with necessary configuration.
 
-        Args:
-            token: API token for authentication
-            dataset_name: Name of dataset to load config for
-            config_dict: Direct configuration dictionary
-            geojson_path: Optional path to GeoJSON for spatial subsetting
+        This constructor requires either a dataset_name to load configuration from S3 
+        or a provided configuration dictionary. Additionally, an optional geojson_path 
+        can be provided for spatial subsetting. The method initializes the Arraylake 
+        client, retrieves the repository, and sets up dimensions and groups as defined in 
+        the configuration.
+
+        Parameters
+        ----------
+        token : str
+            API token for authentication with the Arraylake service.
+        dataset_name : Optional[str]
+            Name of the dataset to load configuration for from S3. Mutually exclusive with config_dict.
+        config_dict : Optional[Dict[str, Any]]
+            A configuration dictionary provided directly. Mutually exclusive with dataset_name.
+        geojson_path : Optional[str]
+            Path (local or S3 URI) to a GeoJSON file for spatial subsetting.
+
+        Raises
+        ------
+        ValueError
+            If neither dataset_name nor config_dict is provided or if both are provided.
         """
         print("loading config")
         if dataset_name is None and config_dict is None:
             raise ValueError("Must provide either dataset_name or config_dict")
-
         if dataset_name is not None and config_dict is not None:
             raise ValueError(
                 "Cannot provide both dataset_name and config_dict")
 
-        # Load config from dataset name or use provided dict
+        # Load configuration from S3 if dataset_name is provided, otherwise use the given dictionary.
         if dataset_name is not None:
             config_loader = ArraylakeDatasetConfig(dataset_name)
             self.config = config_loader._config
         else:
             self.config = config_dict
+
+        # Set key properties from configuration.
         self.dataset_name = self.config['dataset_name']
-        self.repo_name = self.config.get("repo", f"{self.config['organization']/{self.dataset_name}")
+        self.repo_name = self.config.get(
+            "repo", f"{self.config['organization']}/{self.dataset_name}")
         self.crs = self.config.get('crs', 'EPSG:4326')
 
-        # Initialize client and repo
+        # Initialize Arraylake client, get repository, and open a writable session.
         self.client = arraylakeClient(token=token)
         self.repo = self.client.get_repo(self.repo_name)
         self.session = self.repo.writable_session("main")
         self.groups = self.config.get('groups', {})
 
-        # Handle dimensions
+        # Setup dimensions and flag for time dimension.
         self.dims = self.config.get('dim', ['x', 'y'])
         self.has_time = 'time' in self.dims
 
-        # Process bbox if geojson provided
+        # If a GeoJSON path is provided, process it to create a bounding box.
         self.bbox = None
         if geojson_path:
             self.bbox = self._process_geometry(geojson_path)
 
     def _process_geometry(self, geojson_path: str) -> tuple:
-        """Process GeoJSON geometry and ensure CRS matches dataset.
-
-        Args:
-            geojson_path: Path to GeoJSON file. This can be a local file path or an S3 URI.
-
-        Returns:
-            tuple: (minx, miny, maxx, maxy) in dataset CRS.
         """
-        # Read GeoJSON using s3fs if the path is an S3 URI.
+        Process GeoJSON geometry file and ensure its CRS matches the dataset's CRS.
+
+        Reads the provided GeoJSON (local file or S3 URI) and extracts the geometry. 
+        If the CRS of the geometry differs from the dataset's CRS, it reprojects the geometry.
+
+        Parameters
+        ----------
+        geojson_path : str
+            Path to the GeoJSON file (local file path or S3 URI).
+
+        Returns
+        -------
+        tuple
+            A tuple (minx, miny, maxx, maxy) corresponding to the geometry bounds in the dataset's CRS.
+        """
+        # Open GeoJSON using s3fs if the URI indicates S3; else use the local filesystem.
         if geojson_path.startswith("s3://"):
             fs = s3fs.S3FileSystem()
             with fs.open(geojson_path, 'r') as f:
@@ -85,26 +147,33 @@ class ArraylakeRepoInitializer:
             with open(geojson_path, 'r') as f:
                 geojson_dict = json.load(f)
 
-        # Get geometry and its CRS.
+        # Extract the geometry and its CRS
         geometry = shape(geojson_dict['features'][0]['geometry'])
         geom_crs = geojson_dict.get('crs', {}).get(
             'properties', {}).get('name', 'EPSG:4326')
 
-        # Transform if CRS differs.
+        # If the geometry's CRS differs from the dataset's, reproject it.
         if geom_crs != self.crs:
             source_crs = pyproj.CRS(geom_crs)
             target_crs = pyproj.CRS(self.crs)
             project = pyproj.Transformer.from_crs(
-                source_crs,
-                target_crs,
-                always_xy=True
-            ).transform
+                source_crs, target_crs, always_xy=True).transform
             geometry = transform(project, geometry)
 
         return geometry.bounds
 
     def initialize_all_groups(self) -> None:
-        """Initialize all groups defined in the configuration."""
+        """
+        Initialize all variable groups defined in the configuration.
+
+        Iterates over each group in the 'groups' section of the configuration, 
+        invoking initialize_group() for each. Raises an error if no groups are defined.
+
+        Raises
+        ------
+        ValueError
+            If no groups are defined in the configuration.
+        """
         groups = self.config.get("groups", {})
         if not groups:
             raise ValueError("No groups defined in the configuration.")
@@ -113,63 +182,68 @@ class ArraylakeRepoInitializer:
             self.initialize_group(group_name)
 
     def initialize_group(self, group_name: str) -> None:
-        """Initialize a group with all its variables from config.
+        """
+        Initialize a specific group from the configuration.
 
-        Args:
-            group_name: Name of the group in config
+        This method processes the configuration for the given group, extracts variable-specific 
+        settings, determines base raster paths, creates an xarray Dataset schema, and writes 
+        the dataset to a Zarr store. The dataset is chunked based on the supplied dimensions.
+
+        Parameters
+        ----------
+        group_name : str
+            The name of the group to initialize.
+
+        Raises
+        ------
+        ValueError
+            If the group is not found in the configuration or if no variables are defined.
         """
         if group_name not in self.config['groups']:
             raise ValueError(f"Group {group_name} not found")
 
         group_config = self.config['groups'][group_name]
 
-        # Filter out time config and get variable names
+        # Exclude 'time' config and get remaining variable configurations.
         variables = {k: v for k, v in group_config.items() if k != 'time'}
-
         if not variables:
             raise ValueError(f"No variables found in group {group_name}")
 
-        # Collect configurations and base rasters for all variables
+        # Collect base rasters and variable configurations.
         base_rasters = {}
         var_configs = {}
 
         for var_name, var_config in variables.items():
             var_configs[var_name] = var_config
 
-            # Get base raster path for each variable
+            # Use s3_path if defined; otherwise, construct path based on time series data.
             if 's3_path' in var_config:
                 base_rasters[var_name] = var_config['s3_path']
             else:
-                # Handle time series data
                 time_config = group_config.get('time', {})
                 start_date = pd.Timestamp(
                     time_config.get('start', '2000-01-01'))
                 base_rasters[var_name] = f"{var_config['s3_path_prefix']}{start_date.year}{var_config['s3_path_suffix']}"
 
-        # Create schema with all variables
+        # Create dataset schema for the group.
         ds = self.create_schema(group_name, base_rasters, var_configs)
-        # Write to repo
+
+        # Determine chunk sizes for dimensions.
         chunks = {"time": 1, "y": 2000, "x": 2000} if self.has_time else {
             "y": 2000, "x": 2000}
         encoding = self._construct_chunks_encoding(ds, chunks)
         ds = ds.chunk(chunks)
 
+        # Write dataset to Zarr storage.
         if group_name != "root":
-            ds.to_zarr(
-                self.session.store,
-                group=group_name,
-                mode="w",
-                encoding=encoding,
-                compute=False
-            )
+            ds.to_zarr(self.session.store, group=group_name,
+                       mode="w", encoding=encoding, compute=False)
         else:
-            ds.to_zarr(
-                self.session.store,
-                mode="w",
-                encoding=encoding,
-                compute=False
-            )
+            ds.to_zarr(self.session.store, mode="w",
+                       encoding=encoding, compute=False)
         print(f"initialized group: {group_name}")
+
+        # Commit changes to the repository session.
         self.session.commit(f"initialized group: {group_name}")
 
     def create_schema(
@@ -178,22 +252,36 @@ class ArraylakeRepoInitializer:
         base_rasters: Dict[str, str],
         var_configs: Dict[str, Dict[str, Any]]
     ) -> xr.Dataset:
-        """Create schema based on config and base raster.
-
-        Args:
-            group_name: Name of the group in config
-            base_rasters: Dict mapping variable names to base raster paths
-            var_configs: Dict mapping variable names to their configurations
         """
-        # Read template raster from first variable to establish coordinates
+        Create an xarray Dataset schema based on the configuration and base rasters.
+
+        This method establishes coordinates (x, y, and optionally time) and creates data variables 
+        using lazy Dask arrays (with zeros filled in). The resolution is determined from the first 
+        variable's raster. CF metadata is then added to the dataset.
+
+        Parameters
+        ----------
+        group_name : str
+            Name of the group configuration.
+        base_rasters : Dict[str, str]
+            A dictionary mapping variable names to their base raster file paths.
+        var_configs : Dict[str, Dict[str, Any]]
+            A dictionary mapping variable names to their individual configurations.
+
+        Returns
+        -------
+        xr.Dataset
+            An xarray Dataset with proper coordinates, variables, and CF-compliant metadata.
+        """
+        # Read a template raster to establish coordinate reference and resolution.
         first_var = list(base_rasters.keys())[0]
-        with rio.open_rasterio(base_rasters[first_var],  chunks=(1, 4000, 4000), lock=False) as src:
+        with rio.open_rasterio(base_rasters[first_var], chunks=(1, 4000, 4000), lock=False) as src:
             template = src.isel(band=0).to_dataset(name=first_var)
             if template.rio.crs != self.crs:
                 template = template.rio.reproject(self.crs)
             resolution = template.rio.resolution()[0]
 
-        # Get coordinates
+        # Determine coordinates based on bounding box (if provided and not mosaiced) or template.
         if self.bbox is not None and not var_configs[first_var].get('is_mosaiced', False):
             min_x, min_y, max_x, max_y = self.bbox
             x = np.arange(min_x, max_x, resolution)
@@ -202,7 +290,7 @@ class ArraylakeRepoInitializer:
             x = template.x
             y = template.y
 
-        # Create time coordinates if needed
+        # Create coordinates dictionary, adding time if applicable.
         coords = {"y": y, "x": x}
         if self.has_time:
             time_config = self.config['groups'][group_name].get('time', {})
@@ -212,44 +300,45 @@ class ArraylakeRepoInitializer:
                 freq=time_config.get('freq', 'YS')
             )
             coords["time"] = time_range
-        # Create empty dataset with all variables, but use lazy dask arrays instead of np.zeros
+
+        # Build data variables using the dimensions specified in self.dims.
         data_vars = {}
-        # Determine shape from coordinate lengths in self.dims
         shape = tuple(len(coords[dim]) for dim in self.dims)
-        # Prepare chunk sizes based on your chunking scheme. For example:
         default_chunks = [2000 if dim in [
             'y', 'x'] else 1 for dim in self.dims]
         for var_name, var_config in var_configs.items():
-            # Use int8 if that’s your choice for non-float variables
             dtype = np.float32 if var_config['unit_type'] == 'float' else np.int16
-
             data_vars[var_name] = (
                 self.dims,
                 da.zeros(shape, dtype=dtype,
                          chunks=default_chunks, fill_value=-1)
             )
 
-        ds = xr.Dataset(
-            data_vars=data_vars,
-            coords=coords
-        )
-
+        ds = xr.Dataset(data_vars=data_vars, coords=coords)
+        # Add CF metadata to dataset using ArraylakeDatasetConfig helper.
         return ArraylakeDatasetConfig().add_cf_metadata(ds, self.config)
 
     def _construct_chunks_encoding(self, ds: xr.Dataset, chunks: dict) -> dict:
-        """Construct encoding dictionary for zarr storage
+        """
+        Construct an encoding dictionary for writing an xarray Dataset to Zarr storage.
 
-        Args:
-            ds: xarray Dataset to be chunked
-            chunks: Dictionary of chunk sizes for each dimension
+        The encoding dictionary maps each variable to its specific chunk sizes, which are 
+        determined based on the provided chunks dictionary and the variable dimensions.
 
-        Returns:
-            dict: Encoding dictionary for zarr storage with chunk sizes
+        Parameters
+        ----------
+        ds : xr.Dataset
+            The xarray Dataset to be written.
+        chunks : dict
+            Dictionary specifying chunk sizes for each dimension.
+
+        Returns
+        -------
+        dict
+            An encoding dictionary suitable for use with ds.to_zarr().
         """
         return {
-            name: {"chunks": tuple(
-                chunks.get(dim, var.sizes[dim]) for dim in var.dims
-            )
-            }
+            name: {"chunks": tuple(chunks.get(
+                dim, var.sizes[dim]) for dim in var.dims)}
             for name, var in ds.data_vars.items()
         }
