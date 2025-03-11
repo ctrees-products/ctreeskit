@@ -12,7 +12,6 @@ pip install ctreeskit
   - [XrSpatialProcessor Documentation](#xrspatialprocessor)
   - [XrZonalStats Documentation](#xrzonalstats)
 
-
 ## Table of Contents
 1. [Installation](#installation)
    - [PyPI Installation](#from-pypi-to-do--not-yet-implemented)
@@ -24,22 +23,8 @@ pip install ctreeskit
 3. [Usage](#usage)
 4. [API Reference](#api-reference)
    - [XrSpatialProcessor](#xrspatialprocessor)
-     - [`__init__`](#init)
-     - [`reproject_match_target_da`](#reproject_match_target_datarget_da)
-     - [`create_binary_geom_mask_da`](#create_binary_geom_mask_da)
-     - [`create_weighted_geom_mask_da`](#create_weighted_geom_mask_da)
-     - [`create_area_mask_da`](#create_area_mask_dainput_projection4236)
-     - [`create_weighted_area_geom_mask_da`](#create_weighted_area_geom_mask_dainput_projection4236)
-     - [`create_clipped_da_vector`](#create_clipped_da_vector)
-     - [`create_clipped_da_raster`](#create_clipped_da_raster)
-   - [XrZonalStats](#xrzonalstats)
-     - [`__init__`](#init)
-     - [`calculate_categorical_stats`](#calculate_categorical_stats)
-     - [`calculate_continuous_stats`](#calculate_continuous_statsscaling_factornone)
-     - [`calculate_agb_stats`](#calculate_agb_statsscaling_factor10)
-     - [`calculate_stats_by_category`](#calculate_stats_by_categoryscaling_factornone-agbtrue)
-     - [`calculate_percentage_area_stats`](#calculate_percentage_area_stats)
-5. [License](#license)
+
+
 
 ## Installation
 
@@ -52,7 +37,7 @@ pip install ctreeskit
 
 ### From GitHub
 ```bash
-pip install git+https://github.com/ctrees-products/ctreeskit.git@mask_generator
+pip install git+https://github.com/ctrees-products/ctreeskit.git@module_base_package
 ```
 
 ### Development Installation
@@ -61,6 +46,7 @@ For development, you can install with all dependencies:
 # Clone the repository
 git clone https://github.com/ctrees-products/ctreeskit.git
 cd ctreeskit
+change branch to module_base_package
 
 # Create and activate virtual environment
 python -m venv venv
@@ -85,364 +71,300 @@ Contributions are welcome! Please submit a pull request or open an issue for any
 ## Features
 
 - Spatial processing with xarray DataArrays
-- Area calculations and geometry intersections
-- Zonal statistics for categorical and continuous data
+- Area calculations and geometry data
 
-## Usage
+A Python module for efficient geospatial operations on raster data using xarray, with support for integrating vector geometries and calculating areas.
 
-```python
-from ctreeskit import XrSpatialProcessor, XrZonalStats
+## Installation
 
-# Initialize processor
-processor = XrSpatialProcessor(dataset, geometry)
+This module is part of the `ctreeskit` package. Install via pip:
 
-# Calculate areas
-areas = processor.create_area_ha_da()
+```bash
+pip install ctreeskit
 ```
 
+## Dependencies
 
-### API Reference
-# XrGeometryProcessor
+- xarray
+- rioxarray (for spatial operations)
+- numpy
+- shapely
+- pyproj
+- s3fs (for Amazon S3 storage access)
 
-A class for processing geometries with xarray DataArrays, focusing on mask generation and area calculations.
+# XrSpatialProcessor
+## Overview
 
-## Key Methods
-- `clip_raster_to_geom`: Clip raster using geometry
-- `create_binary_geom_mask`: Create binary (0/1) mask
-- `create_proportion_geom_mask`: Calculate intersection proportions
-- `create_area_geom_mask`: Calculate geometry-weighted areas
-- `create_pixel_areas`: Calculate grid cell areas
-- `subset_to_bbox`: Subset to geometry's bounding box
+This module provides tools to:
+
+- Process geospatial vector data (from files or objects) into standardized geometry containers
+- Clip rasters to geometries or bounding boxes
+- Align and resample rasters to match reference grids
+- Calculate accurate cell areas for geographic rasters
+- Create weighted masks based on geometry-pixel intersections
 
 ## Key Features
-- Flexible geometry handling (single or multiple)
-- Area calculations with unit conversion
-- Intersection proportion calculations
-- Memory-efficient processing
-- Optional Dask integration for large datasets
 
-## Basic Usage
+## GeometryData Container
+
+The module uses a `GeometryData` class as a container for processed geometry information:
 
 ```python
-from ctreeskit import XrGeometryProcessor
+class GeometryData:
+    """Container for spatial geometry information."""
+    geom: Optional[List[GeometryLike]]  # List of geometry objects
+    geom_crs: Optional[str]            # Coordinate reference system
+    geom_bbox: Optional[tuple]         # Bounding box (minx, miny, maxx, maxy)
+    geom_area: Optional[float]         # Area (in m² or ha)
+```
 
-# Initialize with geometry
-processor = XrGeometryProcessor(
-    geom_source="area.geojson",
-    dissolve=True
+The `process_geometry` function returns an instance of this class, which can then be directly passed to other functions in the module:
+
+```python
+# Process a geometry source
+geom_data = xspm.process_geometry("path/to/geometry.geojson")
+
+# Use the processed geometry directly with other functions
+clipped = xspm.clip_ds_to_geom(geom_data, my_raster)
+mask = xspm.create_proportion_geom_mask(geom_data, my_raster)
+
+# Access geometry properties
+print(f"Geometry area: {geom_data.geom_area} hectares")
+print(f"Bounding box: {geom_data.geom_bbox}")
+```
+
+This design simplifies workflows by centralizing geometry processing and maintaining consistent behavior across operations.
+
+
+### Geometry Processing
+
+The module accepts various geometry input formats:
+- GeoJSON files (local or S3)
+- Shapely geometry objects
+- Lists of geometries
+- Pre-processed GeometryData objects
+
+```python
+import ctreeskit.xr_analyzer.xr_spatial_processor_module as xspm
+
+# From a local GeoJSON file
+geom_data = xspm.process_geometry("path/to/geometry.geojson")
+
+# From an S3 path
+geom_data = xspm.process_geometry("s3://bucket-name/path/to/geometry.geojson")
+
+# From a shapely geometry
+from shapely.geometry import Polygon
+poly = Polygon([(0, 0), (0, 1), (1, 1), (1, 0), (0, 0)])
+geom_data = xspm.process_geometry(poly)
+```
+
+### Raster Clipping
+
+Clip xarray DataArrays or Datasets to geometries:
+
+```python
+# Clip to a bounding box
+clipped_raster = xspm.clip_ds_to_bbox(raster_data, bbox=(minx, miny, maxx, maxy))
+# With time handling
+clipped_raster = xspm.clip_ds_to_bbox(raster_data, bbox=(minx, miny, maxx, maxy), drop_time=True)
+
+# Clip to a geometry
+clipped_raster = xspm.clip_ds_to_geom(raster_data, geom_data)
+# With all pixels that touch the boundary
+clipped_raster = xspm.clip_ds_to_geom(raster_data, geom_data, all_touch=True)
+```
+
+### Area Calculation
+
+Calculate accurate grid cell areas for geographic rasters:
+
+```python
+# Calculate areas in hectares (default)
+area_grid = xspm.create_area_ds_from_degrees_ds(raster_data)
+
+# Calculate areas in square meters
+area_grid = xspm.create_area_ds_from_degrees_ds(raster_data, output_in_ha=False)
+
+# Force high accuracy calculation (using geodesic distances)
+area_grid = xspm.create_area_ds_from_degrees_ds(raster_data, high_accuracy=True)
+```
+
+### Raster Alignment and Resampling
+
+Align a raster to match another reference raster's grid:
+
+```python
+aligned_raster, area_grid = xspm.align_and_resample_ds(
+    template_raster, 
+    target_raster, 
+    resampling_method=Resampling.nearest
 )
 
-# Create masks
-binary_mask = processor.create_binary_geom_mask(raster)
-weighted_mask = processor.create_proportion_geom_mask(raster)
-
-# Calculate areas
-pixel_areas = processor.create_pixel_areas(raster, unit=Units.HA)
-weighted_areas = processor.create_area_geom_mask(raster, binary=False)
+# Without area grid
+aligned_raster, _ = xspm.align_and_resample_ds(
+    template_raster,
+    target_raster,
+    return_area_grid=False
+)
 ```
 
-## Class Methods
+### Weighted Masks
 
-### `__init__(geom_source, dissolve=True)`
+Create intersection proportion masks:
 
-Initialize GeometryProcessor with input geometry.
+```python
+# Create a weighted mask where values represent intersection proportions
+proportion_mask = xspm.create_proportion_geom_mask(raster_data, geom_data)
 
-**Parameters:**
-- `geom_source` (Union[str, gpd.GeoDataFrame]): Input geometry as either:
-  - Path to GeoJSON/GPKG file (str)
-  - GeoDataFrame (gpd.GeoDataFrame)
-- `dissolve` (bool): Whether to dissolve all geometries into one (default: True)
+# Force proportion calculation even for small pixels
+proportion_mask = xspm.create_proportion_geom_mask(
+    raster_data, 
+    geom_data, 
+    overwrite=True
+)
 
-**Attributes:**
-- `geom` (List[shapely.Geometry]): List of geometries
-- `geom_crs` (CRS): Coordinate reference system
-- `geom_bbox` (tuple): Bounds (minx, miny, maxx, maxy)
-- `geom_area` (float): Total area in square meters
-- `geom_mask` (xr.DataArray): Current mask (if generated)
-- `mask_type` (MaskType): Type of current mask
+# Control the pixel ratio threshold
+proportion_mask = xspm.create_proportion_geom_mask(
+    raster_data,
+    geom_data,
+    pixel_ratio=0.01,  # 1% threshold,
+    overwrite=True
+)
+```
 
-### `create_binary_geom_mask(raster)`
+## API Reference
 
-Create binary mask from geometry.
+### Classes
 
-**Parameters:**
-- `raster` (xr.DataArray): Reference raster for output grid
+- `GeometryData` - Container for processed geometry information (geometries, CRS, bbox, area)
 
-**Returns:**
-- xr.DataArray: Binary mask (1=inside geometry, 0=outside)
+### Core Functions
 
-### `create_proportion_geom_mask(raster, pixel_ratio=0.001, overwrite=False)`
+- `process_geometry(geom_source, dissolve=True, output_in_ha=True)` - Process raw geometry inputs into GeometryData objects
+- `clip_ds_to_bbox(input_ds, bbox, drop_time=False)` - Clip a raster to a bounding box
+- `clip_ds_to_geom(input_ds, geom_source, all_touch=False)` - Clip a raster to a geometry
+- `create_area_ds_from_degrees_ds(input_ds, high_accuracy=None, output_in_ha=True)` - Calculate grid cell areas for geographic rasters
+- `create_proportion_geom_mask(input_ds, geom_source, pixel_ratio=0.001, overwrite=False)` - Create weighted masks based on pixel-geometry intersection
+- `align_and_resample_ds(template_raster, target_raster, resampling_method=Resampling.nearest, return_area_grid=True, output_in_ha=True)` - Align and resample rasters to match reference grids
 
-Calculate intersection proportions between geometry and pixels.
-
-**Parameters:**
-- `raster` (xr.DataArray): Reference raster for output resolution and extent
-- `pixel_ratio` (float): Minimum pixel/geometry area ratio (default: 0.001)
-  - Represents minimum allowed ratio of pixel area to total geometry area
-  - Default threshold is 0.1% (0.001) of geometry area
-  - Ratios below this threshold trigger a warning and fallback to binary mask
-- `overwrite` (bool): Skip ratio check if True (default: False)
-  - When False: Enforces pixel_ratio check and may fallback to binary mask
-  - When True: Calculates proportions regardless of pixel/geometry size ratio
-  - Use True when working with very large geometries or fine resolution rasters
-
-**Returns:**
-- xr.DataArray: Intersection proportions (0-1)
-  - 1.0: Pixel fully within geometry
-  - 0.0: Pixel outside geometry
-  - 0.0-1.0: Proportion of pixel intersecting geometry
-
-**Notes:**
-- Performance Warning: Computing exact intersection proportions is computationally intensive
-- Memory Warning: Large rasters with small pixels relative to geometry may require significant memory
-- Fallback Behavior: When pixel_ratio check fails:
-  1. Warning is issued showing actual ratio vs threshold
-  2. Binary mask is used instead of proportional mask
-  3. self.mask_type is set to BINARY
-- Use `overwrite=True` to force proportion calculation regardless of ratio
-
-**Returns:**
-- xr.DataArray: Intersection proportions (0-1)
-
-### `create_area_geom_mask(raster, binary=True, unit=Units.M2, input_projection=4236)`
-
-Calculate areas for each cell within geometry.
-
-**Parameters:**
-- `raster` (xr.DataArray): Input raster
-- `binary` (bool): Use binary or weighted mask
-- `unit` (Units): Output unit (m², ha, km²)
-- `input_projection` (int): EPSG code for calculations
-
-**Returns:**
-- xr.DataArray: Cell areas in specified unit
-
-### `create_pixel_areas(raster, unit=Units.M2, input_projection=4236)`
-
-Calculate area of each grid cell (create clipped to geometry)
-
-**Parameters:**
-- `raster` (xr.DataArray): Input raster
-- `unit` (Units): Output unit
-- `input_projection` (int): EPSG code
-
-**Returns:**
-- xr.DataArray: Grid cell areas
-
-
-# XrZonalStats
-
-A class for calculating zonal statistics for categorical and continuous data with flexible area handling.
-
-
-## Key Methods
-- `calculate_categorical_stats`: Calculate areas and counts by category
-- `calculate_continuous_stats`: Compute basic statistics (mean, std, etc.)
-- `calculate_agb_stats`: Calculate AGB and carbon statistics
-- `calculate_stats_by_category`: Combine category and value statistics
-- `calculate_percentage_area_stats`: Calculate primary/secondary area splits
-
-## Key Features
-- Calculate statistics by category/zone
-- Compute continuous data statistics (mean, std, etc.)
-- Calculate AGB and carbon statistics with scaling
-- Handle area-weighted calculations with flexible units
-- Support both per-pixel and constant area values
-- Process percentage-based coverage statistics
+###  Helper Functions
+- `_calculate_geometry_area(geom, geom_crs, target_epsg=6933)` - Calculate geometry area in square meters
+- `_measure(lat1, lon1, lat2, lon2)` - Calculate geodesic distance between two points
 
 ## Notes
-- All values must be in the same CRS
-- Negative values in continuous data are treated as no-data
-- Category value 0 is treated as no-data in categorical arrays
-- AGB calculations use a default scaling factor of 10, must be in "ha"
 
-## Basic Usage
+- By default, area calculations use a heuristic based on latitude: geodesic calculations for high latitudes (above 70°) and equal-area projection (EPSG:6933) otherwise
+- When creating proportion masks, the module checks if pixel sizes are too small relative to the geometry; this can be overridden with `overwrite=True`
+- For clipping operations, the module supports both the "all_touch" (include pixels touching the boundary) and standard intersection modes
+- For time-series data, `clip_ds_to_bbox` can optionally drop the time dimension with `drop_time=True`
 
+## Examples
+
+See the module docstrings for detailed usage examples for each function.
+
+# XrZonalStats
+## Overview
+
+This module provides tools to:
+
+- Calculate area statistics for different classes in categorical rasters
+- Support both time-series and static (non-temporal) raster data
+- Offer flexible area calculation options (pixel counts, constant values, or spatially-variable areas)
+- Generate tabular summaries as pandas DataFrames
+
+## Key Features
+
+## Categorical Area Statistics
+Calculate area statistics for different land cover classes or other categorical data:
 ```python
-from ctreeskit import XrZonalStats
+import xarray as xr
+from ctreeskit.xr_analyzer import calculate_categorical_area_stats
 
-# Initialize with data arrays
-stats = XrZonalStats(
-    categorical_da=forest_types,
-    continuous_da=biomass_data,
-    area_da=pixel_areas
-)
+# Simple pixel counting
+result = calculate_categorical_area_stats(land_cover_raster)
 
-# Using constant area value with specified unit
-stats = XrZonalStats(
-    categorical_da=forest_types,
-    continuous_da=biomass_data,
-    area_value=100,
-    area_unit=Units.HA  # or "ha" as string
-)
+# Using a specific area per pixel (e.g., 30x30m = 900 sq meters)
+result = calculate_categorical_area_stats(land_cover_raster, area_ds=900)
 
-# Calculate category-specific statistics
-category_stats = stats.calculate_categorical_stats()
+# Automatically calculate area from coordinates
+result = calculate_categorical_area_stats(land_cover_raster, area_ds=True)
 
-# Calculate AGB statistics
-agb_stats = stats.calculate_agb_stats()
-
-# Calculate statistics by category
-detailed_stats = stats.calculate_stats_by_category(agb=True)
-```
-
-## Class Methods
-
-### `__init__`
-
-```python
-def __init__(
-    categorical_da=None,
-    continuous_da=None,
-    percentage_da=None,
-    area_da=None,
-    area_value=None,
-    area_unit="ha"
+# Only analyze specific classes
+result = calculate_categorical_area_stats(
+    land_cover_raster, 
+    classification_values=[1, 2, 3, 4]
 )
 ```
 
-Initialize ZonalStats with input data arrays and area information.
+## Time Series Support
+Works with both static and time-series data:
+```python 
+# Static raster - returns a single-row DataFrame
+static_result = calculate_categorical_area_stats(land_cover)
 
-**Parameters:**
-- `categorical_da` (xr.DataArray, optional): Categorical mask data
-- `continuous_da` (xr.DataArray, optional): Continuous value data
-- `percentage_da` (xr.DataArray, optional): Percentage coverage values (0-1)
-- `area_da` (xr.DataArray, optional): Area array in hectares -> recommended: `create_weighted_area_geom_mask_da`
-- `area_value` (float, optional): Constant area per pixel
-- `area_unit` (str | Units): Unit for area_value (default: "ha")
-  - Accepted values: "m2", "ha", "km2" or Units enum
-  - Only applies to area_value
-  - Ignored when using area_da
-
-**Attributes:**
-- `categorical_da` (xr.DataArray): Categorical data for zone definitions
-  - Values should be integers > 0
-  - 0 is treated as no-data
-  - None if not provided
-- `continuous_da` (xr.DataArray): Continuous data for statistics
-  - Used for mean, std, etc. calculations
-  - Negative values treated as no-data
-  - None if not provided
-- `percentage_da` (xr.DataArray): Percentage coverage data
-  - Values should be 0-1
-  - Used for area weighting
-  - None if not provided
-- `area_da` (xr.DataArray): Per-pixel areas with units in attrs
-  - Must include 'units' attribute ('m²', 'ha', 'km²')
-  - Takes precedence over area_value
-  - None if not provided
-- `area_value` (float): Constant area per pixel
-  - Used if area_da is None
-  - Units specified by area_unit
-  - None if not provided
-- `area_unit` (str | Units): Unit for area_value calculations
-  - Only applies when using area_value
-  - Accepted values: "m2", "ha", "km2" or Units enum
-  - Defaults to "ha"
-  - Ignored when using area_da
-
-**Raises:**
-- ValueError: If input DataArrays have different CRS
-- ValueError: If DataArrays don't have CRS information
-
-**Example:**
-```python
-# Initialize with all optional parameters
-stats = XrZonalStats(
-    categorical_da=forest_types,
-    continuous_da=biomass_data,
-    percentage_da=coverage_data,
-    area_da=pixel_areas
-)
-
-# Initialize with constant area
-stats = XrZonalStats(
-    categorical_da=forest_types,
-    continuous_da=biomass_data,
-    area_value=0.5,
-    area_unit="ha" # 0.5 hectares per pixel
-)
+# Time-series raster - returns a multi-row DataFrame with a "time" column
+timeseries_result = calculate_categorical_area_stats(land_cover_timeseries)
 ```
-### `calculate_categorical_stats()`
+## Results Format
+Results are returned as pandas DataFrames:
 
-Calculate areas or pixel counts for each category.
-
-**Returns:**
-- List of dictionaries containing:
-  - `category`: category value
-  - `pixel_count`: number of pixels
-  - `area_{unit}`: area in specified unit (if area provided)
-    - Unit from area_da.attrs['units'] or area_unit
-
-### `calculate_continuous_stats(scaling_factor=None)`
-
-Calculate basic statistics for continuous data.
-
-**Parameters:**
-- `scaling_factor` (float, optional): Scaling factor to apply to values
-
-**Returns:**
-Dictionary containing:
-- `count`: Number of valid pixels
-- `sum`: Sum of values
-- `mean`: Mean value
-- `std`: Standard deviation
-- `min`: Minimum value
-- `max`: Maximum value
-- `median`: Median value
-
-### `calculate_agb_stats(scaling_factor=10)`
-
-Calculate AGB and carbon statistics.
-
-**Parameters:**
-- `scaling_factor` (int): Scaling factor for AGB values (default: 10)
-
-**Returns:**
-Dictionary containing:
-- `mean_agb_Mg_per_ha`: Mean AGB in Mg/ha
-- `std_agb_Mg_per_ha`: Standard deviation of AGB
-- `mean_ton_CO2_per_ha`: Mean CO2 in tons/ha
-- `std_ton_CO2_per_ha`: Standard deviation of CO2
-- `total_stock_CO2_Mg`: Total CO2 stock (if area provided)
-- `area_ha`: Total area in hectares (if area provided)
-
-### `calculate_stats_by_category(scaling_factor=None, agb=True)`
-
-Calculate statistics for each category.
-
-**Parameters:**
-- `scaling_factor` (float, optional): Scaling factor for values
-- `agb` (bool): Whether to calculate AGB stats (True) or basic stats (False)
-
-**Returns:**
-List of dictionaries with statistics per category, including:
-- `class`: Category value
-- `pixel_count`: Number of pixels
-- `area_{unit}`: Area in specified unit (if area provided)
-- Statistics from either `calculate_agb_stats()` or `calculate_continuous_stats()`
-- Unit from area_da.attrs['units'] or area_unit
-
-### `calculate_percentage_area_stats()`
-
-Calculate primary and secondary area based on percentage values.
-**Returns:**
-Dictionary containing:
-- `primary_area_{unit}`: Area weighted by percentage/100
-- `secondary_area_{unit}`: Area weighted by (1 - percentage/100)
-- `unit_name`: Name of the area unit used
-- `unit_symbol`: Symbol of the area unit used
-
-**Example:**
-For a pixel with 75% coverage and area of 1 km²:
 ```python
-{
-    'primary_area_km²': 0.75,
-    'secondary_area_km²': 0.25,
-    'unit_name': 'square kilometers',
-    'unit_symbol': 'km²'
-}
+# Output DataFrame columns:
+# - "0": Total area across all classes
+# - "1"..."n": Area for each class (columns match classification_values positions)
+# - "time": For time-series data
 
-## License
+# Example access:
+total_area = result["0"]
+forest_area = result["1"]  # If forest is the first class value
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+```
+
+## API Reference
+
+### Core Functions
+- `calculate_categorical_area_stats(categorical_ds, area_ds=None, classification_values=None)` - Calculate area statistics for different classes in a raster
+
+### Parameters
+- `categorical_ds` : xr.Dataset or xr.DataArray
+  - Categorical raster data (with or without time dimension)
+  - If Dataset, it's converted to DataArray
+- `area_ds` : None, bool, float, or xr.DataArray, optional
+  - None: count pixels (area=1.0 per pixel)
+  - float/int: constant area per pixel
+  - True: calculate area from coordinates
+  - DataArray: custom area per pixel
+- `classification_values` : list, optional
+  - List of class values to analyze
+  - Default uses unique values from data
+
+### Returns
+
+- `pd.DataFrame`
+  - Results with columns:
+    - "0": total area
+    - "1"..."n": per-class areas
+    - "time": if input has time dimension
+
+### Helper Functions
+- `_calculate_area_stats(cl_values, da_class_t, area_ds)` - Calculate area statistics for a single time slice
+
+### Notes
+- The function treats 0 values specially, ensuring they remain 0 (useful for nodata values)
+- When `area_ds=True`, the module uses create_area_ds_from_degrees_ds() from the spatial processor module
+- For datasets with very large number of classes, consider explicitly providing classification_values with classes of interest
+
+### Examples
+#### Basic Usage
+```python
+import xarray as xr
+from ctreeskit.xr_analyzer import calculate_categorical_area_stats
+
+# Load a land cover classification
+land_cover = xr.open_rasterio("landcover.tif")
+
+# Calculate area statistics (defaults to pixel counting)
+results = calculate_categorical_area_stats(land_cover)
+print(results)
+```

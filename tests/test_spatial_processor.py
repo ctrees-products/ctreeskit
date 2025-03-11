@@ -1,179 +1,247 @@
-import pytest
-import xarray as xr
+import os
+import tempfile
+import json
+import unittest
+from unittest.mock import patch, MagicMock
+
 import numpy as np
-import geopandas as gpd
-from shapely.geometry import box
-from ctreeskit import XrSpatialProcessor, Units
+import xarray as xr
+import pandas as pd
+from shapely.geometry import Polygon, MultiPolygon, box
+from rasterio.transform import Affine
+import pyproj
+
+from ctreeskit.xr_analyzer.xr_spatial_processor_module import (
+    GeometryData,
+    process_geometry,
+    clip_ds_to_bbox,
+    clip_ds_to_geom,
+    create_area_ds_from_degrees_ds,
+    create_proportion_geom_mask,
+    align_and_resample_ds,
+    _calculate_geometry_area,
+    _measure
+)
 
 
-@pytest.fixture
-def sample_dataset():
-    """Create a sample dataset for testing."""
-    # Create sample 4x4 array with no band dimension
-    data = np.ones((4, 4))
+class TestGeometryProcessing(unittest.TestCase):
+    def setUp(self):
+        # Create a simple polygon
+        self.polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 
-    coords = {
-        'y': np.linspace(9.5, 12.5, 4),
-        'x': np.linspace(9.5, 12.5, 4)
-    }
+        # Create a mock GeoJSON file
+        self.geojson_data = {
+            "type": "FeatureCollection",
+            "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]
+                    }
+                }
+            ]
+        }
 
-    da = xr.DataArray(
-        data,
-        coords=coords,
-        dims=['y', 'x']
-    )
-    da.rio.write_crs("EPSG:4326", inplace=True)
-    return da
+        # Create a temporary GeoJSON file
+        self.temp_file = tempfile.NamedTemporaryFile(
+            suffix='.geojson', delete=False)
+        with open(self.temp_file.name, 'w') as f:
+            json.dump(self.geojson_data, f)
+
+    def tearDown(self):
+        # Clean up the temporary file
+        os.unlink(self.temp_file.name)
+
+    def test_process_geometry_from_file(self):
+        """Test processing geometry from a file."""
+        result = process_geometry(self.temp_file.name)
+        self.assertIsInstance(result, GeometryData)
+        self.assertEqual(result.geom_crs, "EPSG:4326")
+        self.assertAlmostEqual(result.geom_area, 1.0e-4,
+                               places=5)  # 1 sq meter to hectares
+
+    def test_process_geometry_from_shapely(self):
+        """Test processing a Shapely geometry."""
+        result = process_geometry(self.polygon)
+        self.assertIsInstance(result, GeometryData)
+        self.assertEqual(result.geom_crs, "EPSG:4326")
+
+    def test_process_geometry_dissolve(self):
+        """Test dissolving multiple geometries."""
+        poly1 = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+        poly2 = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])
+
+        # With dissolve=True (default)
+        result_dissolved = process_geometry([poly1, poly2])
+        self.assertEqual(len(result_dissolved.geom), 1)
+
+        # With dissolve=False
+        result_not_dissolved = process_geometry([poly1, poly2], dissolve=False)
+        self.assertEqual(len(result_not_dissolved.geom), 2)
+
+    def test_process_geometry_output_units(self):
+        """Test output units for geometry area."""
+        # In hectares (default)
+        result_ha = process_geometry(self.polygon)
+
+        # In square meters
+        result_m2 = process_geometry(self.polygon, output_in_ha=False)
+
+        # Area in hectares should be 1e-4 times the area in square meters
+        self.assertAlmostEqual(result_ha.geom_area * 10000,
+                               result_m2.geom_area, places=5)
+
+    def test_process_geometry_invalid_input(self):
+        """Test error handling for invalid inputs."""
+        with self.assertRaises(ValueError):
+            process_geometry(123)  # Not a valid geometry source
 
 
-@pytest.fixture
-def sample_geometry():
-    """Create a sample geometry for testing."""
-    polygon = box(10, 10, 12, 12)
-    return gpd.GeoDataFrame(
-        geometry=[polygon],
-        crs="EPSG:4326"
-    )
-
-
-class TestXrSpatialProcessor:
-    """Test class for XrSpatialProcessor."""
-
-    def test_init_with_dataset(self, sample_dataset):
-        """Test initialization with just dataset."""
-        processor = XrSpatialProcessor(sample_dataset)
-        assert processor.da.equals(sample_dataset)
-        assert processor.geom is None
-        assert processor.geom_bbox is None
-
-    def test_init_with_geometry(self, sample_dataset, sample_geometry):
-        """Test initialization with dataset and geometry."""
-        processor = XrSpatialProcessor(sample_dataset, sample_geometry)
-        assert len(processor.geom) == 1
-        assert processor.geom_bbox is not None
-        assert processor.da.equals(sample_dataset)
-
-    def test_init_with_invalid_crs(self, sample_dataset):
-        """Test initialization with mismatched CRS."""
-        invalid_geom = gpd.GeoDataFrame(
-            geometry=[box(0, 0, 1, 1)],
-            crs="EPSG:3857"
+class TestRasterOperations(unittest.TestCase):
+    def setUp(self):
+        # Create a simple test raster
+        lon = np.linspace(-180, 180, 73)
+        lat = np.linspace(-90, 90, 37)
+        data = np.random.rand(len(lat), len(lon))
+        self.test_raster = xr.DataArray(
+            data=data,
+            dims=["y", "x"],
+            coords={"y": lat, "x": lon}
         )
-        processor = XrSpatialProcessor(sample_dataset, invalid_geom)
-        assert processor.geom is not None
-        assert processor.geom[0].bounds == invalid_geom.to_crs(
-            "EPSG:4326").geometry.iloc[0].bounds
 
-    def test_init_with_units(self, sample_dataset):
-        """Test initialization with different units."""
-        # Test string unit specification
-        processor_ha = XrSpatialProcessor(sample_dataset, unit="ha")
-        assert processor_ha.unit.symbol == "ha"
+        # Add rio accessor attributes
+        self.test_raster.rio.write_crs("EPSG:4326", inplace=True)
 
-        # Test Units class constant
-        processor_km2 = XrSpatialProcessor(sample_dataset, unit=Units.KM2)
-        assert processor_km2.unit.symbol == "km²"
+        # Create a time-series raster
+        time_steps = pd.date_range("2020-01-01", periods=3)
+        data_time = np.random.rand(len(time_steps), len(lat), len(lon))
+        self.time_raster = xr.DataArray(
+            data=data_time,
+            dims=["time", "y", "x"],
+            coords={"time": time_steps, "y": lat, "x": lon}
+        )
+        self.time_raster.rio.write_crs("EPSG:4326", inplace=True)
 
-        # Test default unit
-        processor_default = XrSpatialProcessor(sample_dataset)
-        assert processor_default.unit.symbol == "ha"
+        # Create a test geometry
+        self.geom = process_geometry(
+            Polygon([(-10, -10), (-10, 10), (10, 10), (10, -10)]))
 
-    def test_create_binary_geom_mask_da(self, sample_dataset, sample_geometry):
-        """Test binary geometry mask creation."""
-        processor = XrSpatialProcessor(sample_dataset, sample_geometry)
-        mask = processor.create_binary_geom_mask_da()
-        assert isinstance(mask, xr.DataArray)
-        assert mask.dtype == np.uint8
-        assert set(np.unique(mask.values)) <= {0, 1}
+    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
+    @patch('xarray.DataArray.rio')
+    def test_clip_ds_to_bbox(self, mock_rio, mock_clip):
+        """Test clipping to bounding box."""
+        bbox = (-10, -10, 10, 10)
 
-    def test_create_weighted_geom_mask_da(self, sample_dataset, sample_geometry):
-        """Test weighted geometry mask creation."""
-        processor = XrSpatialProcessor(sample_dataset, sample_geometry)
-        weights = processor.create_weighted_geom_mask_da()
+        # Configure mocks
+        mock_clip.return_value = self.test_raster
+        mock_clip.dims = self.test_raster.dims
 
-        # Test basic properties
-        assert isinstance(weights, xr.DataArray)
-        assert weights.dims == ('y', 'x')
+        # Test basic clipping
+        clip_ds_to_bbox(self.test_raster, bbox)
+        mock_rio.clip_box.assert_called_once_with(
+            minx=-10, miny=-10, maxx=10, maxy=10)
 
-        # Test value ranges
-        weight_values = weights.values
-        assert np.all(weight_values >= 0)  # Changed from .all()
-        assert np.all(weight_values <= 1)  # Changed from .all()
+        # Test with time dimension and drop_time=True
+        clip_ds_to_bbox(self.time_raster, bbox, drop_time=True)
 
-    def test_create_area_mask_da(self, sample_dataset):
-        """Test area calculation."""
-        processor = XrSpatialProcessor(sample_dataset)
-        areas = processor.create_area_mask_da()
-        assert isinstance(areas, xr.DataArray)
-        assert (areas.values > 0).all()
-        assert areas.attrs['units'] == 'ha'
+    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
+    def test_clip_ds_to_geom(self, mock_clip_bbox):
+        """Test clipping to geometry."""
+        # Configure mocks
+        mock_clip_bbox.return_value = self.test_raster
 
-    def test_create_weighted_area_geom_mask_da(self, sample_dataset, sample_geometry):
-        """Test weighted area calculation."""
-        processor = XrSpatialProcessor(sample_dataset, sample_geometry)
-        weighted_areas = processor.create_weighted_area_geom_mask_da()
-        assert isinstance(weighted_areas, xr.DataArray)
-        assert weighted_areas.attrs['units'] == 'ha'
-        assert (weighted_areas.values >= 0).all()
+        # Mock the rio.clip method
+        with patch.object(self.test_raster.rio, 'clip', return_value=self.test_raster) as mock_clip:
+            result = clip_ds_to_geom(self.test_raster, self.geom)
+            mock_clip_bbox.assert_called_once()
+            mock_clip.assert_called_once()
 
-    def test_create_clipped_da_vector(self, sample_dataset, sample_geometry):
-        """Test vector clipping."""
-        processor = XrSpatialProcessor(sample_dataset, sample_geometry)
-        clipped = processor.create_clipped_da_vector()
-        # Test basic properties
-        assert isinstance(clipped, xr.DataArray)
-        assert clipped.dims == ('y', 'x')
+    def test_create_area_ds_from_degrees_ds(self):
+        """Test calculating grid cell areas."""
+        # Test with default values
+        result = create_area_ds_from_degrees_ds(self.test_raster)
+        self.assertEqual(result.attrs['units'], 'ha')
+        self.assertIn('approximation', result.attrs['description'])
 
-        # Test that some values are masked (0)
-        masked_values = clipped.values
-        assert np.all(masked_values >= 0)  # Changed from .all()
-        assert np.all(masked_values <= 1)  # Changed from .all()
+        # Test with high_accuracy=True
+        result_high = create_area_ds_from_degrees_ds(
+            self.test_raster, high_accuracy=True)
+        self.assertIn('geodesic', result_high.attrs['description'])
 
-    def test_create_clipped_da_raster(self, sample_dataset, sample_geometry):
-        """Test raster clipping."""
-        processor = XrSpatialProcessor(sample_dataset, sample_geometry)
-        clipped = processor.create_clipped_da_raster()
-        assert isinstance(clipped, xr.DataArray)
-        masked_values = clipped.values
-        assert np.all(masked_values >= 0)  # Changed from .all()
-        assert np.all(masked_values <= 1)  # Changed from .all()
+        # Test with output_in_ha=False
+        result_m2 = create_area_ds_from_degrees_ds(
+            self.test_raster, output_in_ha=False)
+        self.assertEqual(result_m2.attrs['units'], 'm²')
 
-    def test_compare_clipped(self, sample_dataset, sample_geometry):
-        """Test raster and vector clipping results."""
-        processor = XrSpatialProcessor(sample_dataset, sample_geometry)
+    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_geom')
+    def test_create_proportion_geom_mask(self, mock_clip):
+        """Test creating proportion mask."""
+        # Configure mock
+        mock_clipped = xr.DataArray(
+            data=np.ones((5, 5)),
+            dims=["y", "x"],
+            coords={"y": np.linspace(-2, 2, 5), "x": np.linspace(-2, 2, 5)}
+        )
+        mock_clipped.rio.write_crs("EPSG:4326", inplace=True)
+        mock_clip.return_value = mock_clipped
 
-        # Get both clipped versions
-        clipped_ra = processor.create_clipped_da_raster()
-        clipped_va = processor.create_clipped_da_vector()
+        # Set up transform for the test
+        transform = Affine(1.0, 0.0, -2.0, 0.0, 1.0, -2.0)
+        with patch.object(mock_clipped.rio, 'transform', return_value=transform):
+            # Test with default parameters
+            with patch('numpy.nonzero', return_value=(np.array([0, 1, 2]), np.array([0, 1, 2]))):
+                result = create_proportion_geom_mask(mock_clipped, self.geom)
+                self.assertEqual(result.attrs['units'], 'proportion')
 
-        # Print detailed information
-        print("\nRaster clipping info:")
-        print(f"Size: {clipped_ra.size}")
-        print(f"Values: \n{clipped_ra.values}")
-        print(f"Non-null count: {np.sum(~np.isnan(clipped_ra.values))}")
+    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
+    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.create_area_ds_from_degrees_ds')
+    def test_align_and_resample_ds(self, mock_create_area, mock_clip):
+        """Test aligning and resampling datasets."""
+        # Configure mocks
+        mock_clip.return_value = self.test_raster
+        mock_aligned = self.test_raster.copy()
+        mock_create_area.return_value = xr.DataArray(
+            np.ones_like(self.test_raster))
 
-        print("\nVector clipping info:")
-        print(f"Size: {clipped_va.size}")
-        print(f"Values: \n{clipped_va.values}")
-        print(f"Non-null count: {np.sum(~np.isnan(clipped_va.values))}")
+        with patch.object(mock_clip.return_value.rio, 'reproject_match', return_value=mock_aligned):
+            # Test with default parameters
+            result, area = align_and_resample_ds(
+                self.test_raster, self.test_raster)
+            mock_clip.assert_called_once()
+            mock_create_area.assert_called_once()
 
-        # Check binary mask
-        binary_mask = processor.create_binary_geom_mask_da()
-        print("\nBinary mask info:")
-        print(f"Values: \n{binary_mask.values}")
-        print(f"Sum of ones: {np.sum(binary_mask.values == 1)}")
+            # Test without area grid
+            result, area = align_and_resample_ds(
+                self.test_raster, self.test_raster, return_area_grid=False)
+            self.assertIsNone(area)
 
-        # Modified assertions
-        assert clipped_ra.size > 0, "Raster clipped array has size 0"
-        assert np.any(~np.isnan(clipped_ra.values)
-                      ), "All values are NaN in raster clip"
-        assert np.array_equal(
-            np.isnan(clipped_ra.values),
-            np.isnan(clipped_va.values)
-        ), "Mask patterns differ"
 
-    def test_error_no_geometry(self, sample_dataset):
-        """Test error handling when no geometry is provided."""
-        processor = XrSpatialProcessor(sample_dataset)
-        with pytest.raises(ValueError):
-            processor.create_binary_geom_mask_da()
+class TestHelperFunctions(unittest.TestCase):
+    def test_calculate_geometry_area(self):
+        """Test geometry area calculation."""
+        poly = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+        geom = [poly]
+
+        # Test with default target projection
+        area = _calculate_geometry_area(geom, "EPSG:4326")
+        self.assertGreater(area, 0)
+
+        # Test with different target projection
+        area2 = _calculate_geometry_area(geom, "EPSG:4326", target_epsg=3857)
+        self.assertGreater(area2, 0)
+
+    def test_measure(self):
+        """Test geodesic distance calculation."""
+        # Distance between equator and 1 degree north at prime meridian
+        dist = _measure(0, 0, 1, 0)
+        self.assertAlmostEqual(dist, 111195, delta=5)  # Approximately 111.2 km
+
+        # Test with different coordinates
+        dist2 = _measure(0, 0, 0, 1)
+        self.assertGreater(dist2, 0)
+
+
+if __name__ == '__main__':
+    unittest.main()

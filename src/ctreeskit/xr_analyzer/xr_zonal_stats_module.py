@@ -126,3 +126,7 @@ def _calculate_area_stats(cl_values, da_class_t, area_ds):
     # Use simple numeric column names as strings.
     col_names = [str(i) for i in range(len(data))]
     return pd.DataFrame(data.reshape(1, -1), columns=col_names)
+
+
+__all__ = [
+    "calculate_categorical_area_stats"]

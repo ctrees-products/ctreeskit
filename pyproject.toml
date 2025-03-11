@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ctreeskit"
-version = "0.1.0"
+version = "0.1.1"
 description = """
 CTrees toolkit for geospatial analysis and forest carbon monitoring.
 Core features include xarray-based analysis tools.
