@@ -4,16 +4,13 @@ from typing import Union, Optional, List, Protocol
 
 import numpy as np
 import xarray as xr
-import dask
-import dask.array as da
+import pandas as pd
 import s3fs
 import pyproj
 from pyproj import Proj, Geod
-from affine import Affine
-from rasterio import features
-from rasterio.enums import MergeAlg
 from shapely.geometry import box, shape
 from shapely.ops import transform, unary_union
+from rasterio.enums import Resampling
 
 # A simple protocol to type-check geometry-like objects.
 
@@ -23,6 +20,20 @@ class GeometryLike(Protocol):
 
 
 class GeometryData:
+    """
+    Container for spatial geometry information.
+
+    Attributes
+    ----------
+    geom : Optional[List[GeometryLike]]
+         List of geometry objects (usually Shapely geometries).
+    geom_crs : Optional[str]
+         Coordinate reference system as an EPSG string (e.g., "EPSG:4326").
+    geom_bbox : Optional[tuple]
+         Bounding box of the geometry (minx, miny, maxx, maxy).
+    geom_area : Optional[float]
+         Area of the geometry (in m² or ha, depending on conversion).
+    """
     geom: Optional[List[GeometryLike]]
     geom_crs: Optional[str]
     geom_bbox: Optional[tuple]
@@ -46,23 +57,33 @@ ExtendedGeometryInput = Union["GeometryData", GeometrySource,
 def process_geometry(geom_source: GeometrySource,
                      dissolve: bool = True, output_in_ha=True):
     """
-    Load and validate geometry source.
+    Load, validate, and process a geometry source into a standardized GeometryData object.
+
+    The geom_source may be one of:
+      - A file path (local or S3 URI) pointing to a GeoJSON file.
+      - A single geometry (that implements the 'geom_type' attribute).
+      - A list of geometries.
+
+    If dissolve is True the geometries are merged into a single object and the bounding box is computed
+    accordingly.
 
     Parameters
     ----------
-    geom_source : str or list or GeometryLike
-         Either a file path (local or S3 URI) to a GeoJSON file, a list of Shapely geometries,
-         or a single Shapely geometry.
-    dissolve : bool
+    geom_source : str or GeometryLike or list of GeometryLike
+         The input geometry source.
+    dissolve : bool, default True
          If True, all geometries are dissolved into a single geometry.
+    output_in_ha : bool, default True
+         If True, converts the computed area from square meters to hectares.
 
     Returns
     -------
-    tuple
-         (geom, geom_crs, geom_bbox)
-         - geom: list of Shapely geometries (dissolved if requested)
-         - geom_bbox: tuple (minx, miny, maxx, maxy) spanning the geometries
-         - geom_area: size of geometry in ha
+    GeometryData
+         An object containing:
+             - geom: a list of geometry(ies) (dissolved if requested)
+             - geom_crs: the coordinate reference system (string)
+             - geom_bbox: the bounding box (minx, miny, maxx, maxy)
+             - geom_area: the computed area (converted if output_in_ha is True)
     """
     geometries = None
     crs = None
@@ -107,21 +128,21 @@ def process_geometry(geom_source: GeometrySource,
 
 def _calculate_geometry_area(geom: List, geom_crs: str, target_epsg: int = 6933) -> float:
     """
-    Compute the area (in square meters) of the supplied geometry.
+    Compute the area of a set of geometries in square meters using a target projection.
 
     Parameters
     ----------
     geom : list
-         List of Shapely geometries.
+         List of Shapely geometry objects.
     geom_crs : str
-         The source CRS of the geometry.
-    target_epsg : int, default=6933
-         EPSG code for the target projection.
+         Source coordinate reference system (e.g., "EPSG:4326").
+    target_epsg : int, default 6933
+         EPSG code for the target projection used to compute area accurately.
 
     Returns
     -------
     float
-         Area in square meters.
+         Computed area in square meters.
     """
     if len(geom) > 1:
         union_geom = unary_union(geom)
@@ -134,6 +155,78 @@ def _calculate_geometry_area(geom: List, geom_crs: str, target_epsg: int = 6933)
     return projected_geom.area
 
 
+def clip_ds_to_bbox(input_ds: Union[xr.DataArray, xr.Dataset], bbox: tuple, drop_time: bool = False) -> xr.DataArray:
+    """
+    Clip a raster (DataArray or Dataset) to a given bounding box.
+
+    Parameters
+    ----------
+    input_ds : xr.DataArray or xr.Dataset
+         The input raster with valid spatial metadata.
+    bbox : tuple
+         Bounding box as (minx, miny, maxx, maxy).
+    drop_time : bool, default False
+         If True and the raster has a 'time' dimension, only the first time slice is returned.
+
+    Returns
+    -------
+    xr.DataArray
+         The raster clipped to the specified bounding box.
+    """
+    minx, miny, maxx, maxy = bbox
+    clipped = input_ds.rio.clip_box(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
+    if drop_time and 'time' in clipped.dims:
+        return clipped.isel(time=0)
+    return clipped
+
+
+def clip_ds_to_geom(input_ds: Union[xr.DataArray, xr.Dataset], geom_source: ExtendedGeometryInput, all_touch=False) -> xr.DataArray:
+    """
+    Clip a raster to the extent of the provided geometry.
+
+    The input geometry may be provided as a GeometryData instance or as a raw geometry source
+    (e.g., a file path, a single geometry, or a list). If not a GeometryData instance, the geometry
+    is processed via process_geometry.
+
+    Parameters
+    ----------
+    input_ds : xr.DataArray or xr.Dataset
+         The input raster to be clipped. Must contain spatial metadata.
+    geom_source : ExtendedGeometryInput
+         Either a GeometryData instance, a single geometry (or list), or a GeoJSON file path.
+         The geometry objects should have a 'geom_type' attribute if not already wrapped.
+    all_touch : bool, default False
+         If True, includes all pixels touched by the geometry boundaries.
+
+    Returns
+    -------
+    xr.DataArray
+         Raster clipped to the geometry’s spatial extent. Areas outside the geometry are set to 0 or NaN.
+    """
+    if not isinstance(geom_source, GeometryData):
+        geom_source = process_geometry(geom_source, True)
+    geom = geom_source.geom
+    bbox = geom_source.geom_bbox
+    crs = geom_source.geom_crs
+
+    # Prepare spatial subset if needed
+    spatial_raster = clip_ds_to_bbox(input_ds, bbox)
+
+    # Convert geometries to GeoJSON format for clipping
+    geoms = [g.__geo_interface__ for g in geom]
+
+    # Clip the raster using rioxarray
+    result = spatial_raster.rio.clip(
+        geoms,
+        crs=crs,
+        all_touched=all_touch,
+        drop=True,
+        from_disk=True  # More memory efficient
+    )
+
+    return result
+
+
 def _measure(lat1, lon1, lat2, lon2) -> float:
     """
     Compute the geodesic distance (in meters) between two points on the WGS84 ellipsoid.
@@ -143,25 +236,144 @@ def _measure(lat1, lon1, lat2, lon2) -> float:
     return distance
 
 
-def create_area_ds_from_degrees_ds(input_ds:  Union[xr.DataArray, xr.Dataset],
-                                   high_accuracy: Optional[bool] = None,
-                                   output_in_ha: bool = True) -> xr.DataArray:
+def align_and_resample_ds(template_raster: Union[xr.DataArray, xr.Dataset],
+                          target_raster: Union[xr.DataArray, xr.Dataset],
+                          resampling_method=Resampling.nearest,
+                          return_area_grid: bool = True,
+                          output_in_ha: bool = True):
     """
-    Calculate the area of each grid cell in a geographic raster and return as a DataArray.
+    Align and resample a target raster to match the spatial grid of a template raster.
+
+    The target raster is first clipped to the extent of the template raster and then reprojected
+    so that its grid (extent, resolution, and transform) exactly matches that of the template.
+    Optionally, a grid of cell areas is computed on the aligned raster.
 
     Parameters
     ----------
-    input_ds : xr.DataArray or xr.Dataset
-         Input raster with 'y' (latitude) and 'x' (longitude) coordinates (in decimal degrees).
-    high_accuracy : bool, optional
-         If True, use geodesic calculations; if False, use an equal-area projection.
-    output_in_ha : bool, default=True
-         If True, convert area from square meters to hectares.
+    template_raster : xr.DataArray or xr.Dataset
+         The reference raster defining the target grid.
+    target_raster : xr.DataArray or xr.Dataset
+         The raster to be aligned and resampled.
+    resampling_method : str, optional
+         The resampling algorithm to use (e.g., "nearest", "bilinear").
+    return_area_grid : bool, default True
+         If True, returns a DataArray with grid cell areas.
+    output_in_ha : bool, default True
+         If True, computed areas will be converted to hectares; otherwise, areas are in square meters.
+
+    Returns
+    -------
+    tuple
+         A tuple (aligned_target, area_target) where:
+         - aligned_target is the resampled target raster.
+         - area_target is the grid of cell areas (or None if return_area_grid is False).
+    """
+    clipped_target = clip_ds_to_bbox(
+        template_raster, target_raster.rio.bounds(), drop_time=True)
+    aligned_target = clipped_target.rio.reproject_match(
+        template_raster, resampling=resampling_method)
+    area_target = None
+    if return_area_grid:
+        area_target = create_area_ds_from_degrees_ds(
+            aligned_target, output_in_ha=output_in_ha)
+    return aligned_target, area_target
+
+
+def create_proportion_geom_mask(input_ds: xr.DataArray, geom_source: ExtendedGeometryInput, pixel_ratio=.001, overwrite=False) -> xr.DataArray:
+    """
+    Create a weighted mask for a raster based on the intersection proportions of its pixels with a geometry.
+
+    This function calculates, for each pixel in the input raster, the proportion of the pixel area intersecting the
+    provided geometry. If the pixel area (derived from the raster transform) is below a given ratio threshold
+    (unless overwrite is True), the function returns a binary mask instead.
+
+    Parameters
+    ----------
+    input_ds : xr.DataArray
+         The input raster whose pixel intersection proportions are to be computed.
+    geom_source : ExtendedGeometryInput
+         Either a GeometryData instance or a raw geometry source (e.g., a file path, a single geometry, or a list).
+         If not a GeometryData instance, it is processed via process_geometry.s
+    pixel_ratio : float, default 0.001
+         The minimum ratio of pixel area to geometry area required before performing a weighted computation;
+         otherwise, a binary mask is returned.
+    overwrite : bool, default False
+         If True, bypasses the pixel_ratio check and always computes weighted proportions.
 
     Returns
     -------
     xr.DataArray
-         Grid cell areas in the specified units, with appropriate metadata.
+         A DataArray mask where each pixel value (between 0 and 1) represents the fraction of that pixel's area
+         that intersects the geometry. Pixels with no intersection return 0.
+    """
+    # Use existing caching and binary mask creation
+    if not isinstance(geom_source, GeometryData):
+        geom_source = process_geometry(geom_source, True)
+    geom = geom_source.geom
+
+    raster_transform = input_ds.rio.transform()
+    pixel_size = abs(raster_transform.a * raster_transform.e)
+    percentage_array = np.zeros(input_ds.shape, dtype=np.float32)
+    # When overwrite is False, enforce the pixel_ratio check.
+    if not overwrite:
+        ratio = pixel_size / geom.geom_area
+        if ratio < pixel_ratio:
+            warnings.warn(
+                f"(pixel area ratio {ratio:.3e} is below {pixel_ratio*100:.3e}% of the project area). "
+                "Weighted mask computation skipped; binary mask automatically set to self.geom_mask."
+                "Use overwrite=True to utilize porportion-based mask computation.",
+                UserWarning
+            )
+            clipped_raster = clip_ds_to_geom(geom_source, input_ds)
+            return xr.where(clipped_raster.notnull(), 1, 0)
+
+    clipped_raster = clip_ds_to_geom(geom_source, input_ds, all_touch=True)
+    # Loop over nonzero pixels:
+    y_idx, x_idx = np.nonzero(clipped_raster.data)
+    for y, x in zip(y_idx, x_idx):
+        x_min, y_min = raster_transform * (x, y)
+        x_max, y_max = raster_transform * (x + 1, y + 1)
+        pixel_geom = box(x_min, y_min, x_max, y_max)
+        total_int = sum(geom.intersection(
+            pixel_geom).area for geom in geom_source.geom)
+        percentage_array[y, x] = min(total_int / pixel_size, 1.0)
+
+    result = xr.DataArray(
+        percentage_array,
+        coords=clipped_raster.coords,
+        dims=clipped_raster.dims,
+        attrs={'units': 'proportion',
+               'description': 'Pixel intersection proportions (0-1)'}
+    )
+    return result
+
+
+def create_area_ds_from_degrees_ds(input_ds:  Union[xr.DataArray, xr.Dataset],
+                                   high_accuracy: Optional[bool] = None,
+                                   output_in_ha: bool = True) -> xr.DataArray:
+    """
+    Calculate cell areas for a geographic raster based on pixel coordinate extents.
+
+    The function computes the area of each grid cell by calculating the distance between
+    the cell boundaries. Two methods are available:
+      - High accuracy: uses geodesic distances (via the _measure function).
+      - Low accuracy: uses a projected equal-area approximation (EPSG:6933).
+
+    Parameters
+    ----------
+    input_ds : xr.DataArray or xr.Dataset
+         Raster with latitude ('y') and longitude ('x') coordinates in decimal degrees.
+    high_accuracy : bool, optional
+         If True, use geodesic (great circle) distance calculations.
+         If False, use an equal-area projection. If None, a heuristic based on latitude is applied.
+    output_in_ha : bool, default True
+         If True, converts computed areas from square meters to hectares.
+
+    Returns
+    -------
+    xr.DataArray
+         A DataArray containing the area for each grid cell, with metadata indicating the units and
+         the method used (either "geodesic distances" or "EPSG:6933 approximation").
     """
     lat_center = input_ds.y.values  # assumed sorted north to south
     lon_center = input_ds.x.values  # assumed sorted west to east
@@ -212,186 +424,10 @@ def create_area_ds_from_degrees_ds(input_ds:  Union[xr.DataArray, xr.Dataset],
                                'description': f"Grid cell area in {unit} computed using {method}"})
 
 
-def clip_to_bbox(input_ds: Union[xr.DataArray, xr.Dataset], bbox: tuple, drop_time: bool = False) -> xr.DataArray:
-    """
-    Clip the input raster to the specified bounding box.
-
-    Parameters
-    ----------
-    input_ds : xr.DataArray or xr.Dataset
-         The raster to clip.
-    bbox : tuple
-         Bounding box (minx, miny, maxx, maxy).
-    drop_time : bool, default=False
-         If True and a 'time' dimension exists, return the first time slice.
-
-    Returns
-    -------
-    xr.DataArray
-         The spatially subset raster.
-    """
-    minx, miny, maxx, maxy = bbox
-    clipped = input_ds.rio.clip_box(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
-    if drop_time and 'time' in clipped.dims:
-        return clipped.isel(time=0)
-    return clipped
-
-
-def clip_to_geom(geom_source: ExtendedGeometryInput, input_ds: Union[xr.DataArray, xr.Dataset], all_touch=False) -> xr.DataArray:
-    """
-    Clip the input raster to the extent of the supplied geometry.
-
-    This function accepts a geometry input that can be either a GeometryData instance or a geometry source (or list of them)
-    (e.g. a file path, a single geometry, or a list of geometries). If the provided geom_source is not already a GeometryData,
-    it will be processed using process_geometry to obtain the necessary properties (geometry, CRS, and bounding box).
-
-    Parameters
-    ----------
-    geom_source : ExtendedGeometryInput
-         Either a GeometryData instance, a single geometry (or list of geometries), or a file path to a GeoJSON.
-         The geometry is expected to have a 'geom_type' attribute if not wrapped in GeometryData.
-    input_ds : xr.DataArray or xr.Dataset
-         The input raster to be clipped. It must have valid spatial metadata.
-    all_touch : bool, optional
-         If True, all pixels touched by the geometry will be included. Default is False.
-
-    Returns
-    -------
-    xr.DataArray
-         A raster clipped to the geometry’s extent. Pixels outside the supplied geometry are set to 0 or NaN,
-         and the output retains the CRS and spatial properties defined by the geometry source.
-    """
-    if not isinstance(geom_source, GeometryData):
-        geom_source = process_geometry(geom_source, True)
-    geom = geom_source.geom
-    bbox = geom_source.geom_bbox
-    crs = geom_source.geom_crs
-
-    # Prepare spatial subset if needed
-    spatial_raster = clip_to_bbox(input_ds, bbox)
-
-    # Convert geometries to GeoJSON format for clipping
-    geoms = [g.__geo_interface__ for g in geom]
-
-    # Clip the raster using rioxarray
-    result = spatial_raster.rio.clip(
-        geoms,
-        crs=crs,
-        all_touched=all_touch,
-        drop=True,
-        from_disk=True  # More memory efficient
-    )
-
-    return result
-
-
-def align_and_resample_raster(template_raster: Union[xr.DataArray, xr.Dataset],
-                              target_raster: Union[xr.DataArray, xr.Dataset],
-                              resampling_method="nearest",
-                              return_area_grid: bool = True,
-                              output_in_ha: bool = True):
-    """
-    Clip the target raster to the template’s spatial bounds and resample it to match the template’s grid.
-
-    Parameters
-    ----------
-    template_raster : xr.DataArray or xr.Dataset
-         The reference raster whose grid will be used.
-    target_raster : xr.DataArray or xr.Dataset
-         The raster to be aligned.
-    resampling_method : str, optional
-         Method for reprojecting (e.g., "nearest", "bilinear").
-    return_area_grid : bool, default=True
-         If True, compute a grid of cell areas.
-    output_in_ha : bool, default=True
-         If True, return area in hectares; otherwise in square meters.
-
-    Returns
-    -------
-    tuple
-         (aligned_target, area_target)
-    """
-    clipped_target = clip_to_bbox(
-        template_raster, target_raster.rio.bounds(), drop_time=True)
-    aligned_target = clipped_target.rio.reproject_match(
-        template_raster, resampling=resampling_method)
-    area_target = None
-    if return_area_grid:
-        area_target = create_area_ds_from_degrees_ds(
-            aligned_target, output_in_ha=output_in_ha)
-    return aligned_target, area_target
-
-
-def create_proportion_geom_mask(input_ds: xr.DataArray, pixel_ratio=.001, overwrite=False) -> xr.DataArray:
-    """
-    Create a weighted mask based on geometry intersection proportions.
-
-    Parameters
-    ----------
-    raster : xr.DataArray
-        Reference raster for output resolution and extent
-    pixel_ratio : float, default=0.001
-        Minimum ratio of pixel area to geometry area (0.1% default)
-    overwrite : bool, default=False
-        If True, bypasses the pixel_ratio check
-
-    Returns
-    -------
-    xr.DataArray
-        Weighted mask where values 0-1 represent:
-        1.0 = pixel fully within geometry
-        0.0 = pixel outside geometry
-        0.0-1.0 = proportion of pixel intersecting geometry
-
-    Notes
-    -----
-    Falls back to binary mask if pixel_ratio check fails.
-    Uses exact geometry intersection calculations.
-    Sets self.geom_mask and self.mask_type to WEIGHTED.
-    """
-    # Use existing caching and binary mask creation
-    binary_mask = create_binary_geom_mask(input_ds)
-
-    raster_transform = binary_mask.rio.transform()
-    pixel_size = abs(raster_transform.a * raster_transform.e)
-    percentage_array = np.zeros(binary_mask.shape, dtype=np.float32)
-    # When overwrite is False, enforce the pixel_ratio check.
-    if not overwrite:
-        ratio = pixel_size / self.geom_area
-        if ratio < pixel_ratio:
-            warnings.warn(
-                f"(pixel area ratio {ratio:.3e} is below {pixel_ratio*100:.3e}% of the project area). "
-                "Weighted mask computation skipped; binary mask automatically set to self.geom_mask."
-                "Use overwrite=True to utilize porportion-based mask computation.",
-                UserWarning
-            )
-            return binary_mask
-
-    # Loop over nonzero pixels:
-    y_idx, x_idx = np.nonzero(binary_mask.data)
-    for y, x in zip(y_idx, x_idx):
-        x_min, y_min = raster_transform * (x, y)
-        x_max, y_max = raster_transform * (x + 1, y + 1)
-        pixel_geom = box(x_min, y_min, x_max, y_max)
-        total_int = sum(geom.intersection(
-            pixel_geom).area for geom in self.geom)
-        percentage_array[y, x] = min(total_int / pixel_size, 1.0)
-
-    result = xr.DataArray(
-        percentage_array,
-        coords=binary_mask.coords,
-        dims=binary_mask.dims,
-        attrs={'units': 'proportion',
-               'description': 'Pixel intersection proportions (0-1)'}
-    )
-    return result
-
-
 __all__ = [
     "process_geometry",
-    "_calculate_geometry_area",
+    "clip_ds_to_bbox",
+    "clip_ds_to_geom",
     "create_area_ds_from_degrees_ds",
-    "clip_to_bbox",
-    "align_and_resample_raster",
-    "clip_to_geom"
-]
+    "create_proportion_geom_mask",
+    "align_and_resample_ds"]
