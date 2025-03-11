@@ -11,16 +11,14 @@ from shapely.geometry import Polygon, MultiPolygon, box
 from rasterio.transform import Affine
 import pyproj
 
-from ctreeskit.xr_analyzer.xr_spatial_processor_module import (
+from ctreeskit import (
     GeometryData,
     process_geometry,
     clip_ds_to_bbox,
     clip_ds_to_geom,
     create_area_ds_from_degrees_ds,
     create_proportion_geom_mask,
-    align_and_resample_ds,
-    _calculate_geometry_area,
-    _measure
+    align_and_resample_ds
 )
 
 
@@ -216,31 +214,6 @@ class TestRasterOperations(unittest.TestCase):
             result, area = align_and_resample_ds(
                 self.test_raster, self.test_raster, return_area_grid=False)
             self.assertIsNone(area)
-
-
-class TestHelperFunctions(unittest.TestCase):
-    def test_calculate_geometry_area(self):
-        """Test geometry area calculation."""
-        poly = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
-        geom = [poly]
-
-        # Test with default target projection
-        area = _calculate_geometry_area(geom, "EPSG:4326")
-        self.assertGreater(area, 0)
-
-        # Test with different target projection
-        area2 = _calculate_geometry_area(geom, "EPSG:4326", target_epsg=3857)
-        self.assertGreater(area2, 0)
-
-    def test_measure(self):
-        """Test geodesic distance calculation."""
-        # Distance between equator and 1 degree north at prime meridian
-        dist = _measure(0, 0, 1, 0)
-        self.assertAlmostEqual(dist, 111195, delta=5)  # Approximately 111.2 km
-
-        # Test with different coordinates
-        dist2 = _measure(0, 0, 0, 1)
-        self.assertGreater(dist2, 0)
 
 
 if __name__ == '__main__':

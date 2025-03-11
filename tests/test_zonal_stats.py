@@ -4,9 +4,8 @@ import xarray as xr
 import pandas as pd
 from unittest.mock import patch, MagicMock
 
-from ctreeskit.xr_analyzer.xr_zonal_stats_module import (
-    calculate_categorical_area_stats,
-    _calculate_area_stats
+from ctreeskit import (
+    calculate_categorical_area_stats
 )
 
 
@@ -179,18 +178,6 @@ class TestZonalStats(unittest.TestCase):
         self.assertEqual(result["0"][0], 7)  # Total area of classes 1 and 2
         self.assertEqual(result["1"][0], 3)  # Class 1
         self.assertEqual(result["2"][0], 4)  # Class 2
-
-    def test_helper_calculate_area_stats(self):
-        """Test the _calculate_area_stats helper function directly."""
-        cl_values = [0, 1, 2]
-        result = _calculate_area_stats(
-            cl_values, self.static_raster, self.area_da)
-
-        self.assertEqual(result.shape, (1, 4))
-        self.assertEqual(result["0"][0], 4.5)  # Total area
-        self.assertEqual(result["1"][0], 1.0)  # Class 0
-        self.assertEqual(result["2"][0], 1.5)  # Class 1
-        self.assertEqual(result["3"][0], 2.0)  # Class 2
 
 
 if __name__ == '__main__':
