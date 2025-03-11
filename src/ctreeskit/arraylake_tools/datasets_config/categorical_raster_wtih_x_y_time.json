@@ -1,7 +1,7 @@
 {
     "dataset_name": "EXAMPLE_DATASET_NAME",
-    "organization": "ORGANIZATION_NAME",
     "long_name": "Categorical Raster with x, y and time dims",
+    "organization": "ORGANIZATION_NAME",
     "repo": "ORGANIZATION_NAME/EXAMPLE_DATASET_NAME",
     "crs": "EPSG:4326",
     "dim": [

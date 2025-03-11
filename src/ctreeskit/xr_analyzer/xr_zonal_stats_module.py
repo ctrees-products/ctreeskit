@@ -14,7 +14,7 @@ def calculate_categorical_area_stats(categorical_ds, area_ds=None, classificatio
     ----------
     categorical_ds : xr.Dataset or xr.DataArray
         Categorical raster data (with or without time dimension).
-        If Dataset, must have 'classification' variable.
+        If Dataset, turns it into dataarray
     area_ds : None, bool, float, or xr.DataArray, optional
         - None: count pixels (area=1.0 per pixel)
         - float/int: constant area per pixel
@@ -30,9 +30,9 @@ def calculate_categorical_area_stats(categorical_ds, area_ds=None, classificatio
         and "time" (if input has time dimension).
     """
     # Prepare the classification dataset: force zeros to remain zero
-    # and select the 'classification' variable.
+    # and convert to dataarray.
     if isinstance(categorical_ds, xr.Dataset):
-        categorical_ds = categorical_ds.classification
+        categorical_ds = categorical_ds.to_datarray()
 
     # Force zeros to remain zero.
     categorical_ds = categorical_ds.where(categorical_ds != 0, 0)
