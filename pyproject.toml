@@ -35,7 +35,8 @@ dependencies = [
     "geopandas>=0.14.1",
     "shapely>=2.0.2",
     "pyproj>=3.6.1",
-    "scipy>=1.7.3"
+    "scipy>=1.7.3",
+    "s3fs>=2025.3.0"
 ]
 
 [project.optional-dependencies]

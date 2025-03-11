@@ -8,6 +8,7 @@ shapely>=2.0.2
 pyproj>=3.6.1
 zarr==3.0.3
 scipy>=1.7.3
+s3fs>=2025.3.0
 
 # Optional dependencies
 dask>=2023.12.1
