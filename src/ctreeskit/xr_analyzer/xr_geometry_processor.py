@@ -1,7 +1,7 @@
 # Standard library imports
 import json
 import warnings
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Protocol
 
 # Third-party library imports
 import numpy as np
@@ -16,10 +16,15 @@ from rasterio import features
 from rasterio.enums import MergeAlg
 from shapely.geometry import box, shape
 from shapely.ops import transform, unary_union
-from shapely import BaseGeometry
 
 # Local application/library specific imports
 from .common import MaskType, Units
+
+from typing import Protocol, Union, List
+
+
+class GeometryLike(Protocol):
+    geom_type: str
 
 
 class XrGeometryProcessor:
@@ -33,7 +38,7 @@ class XrGeometryProcessor:
 
     def __init__(
         self,
-        geom_source: Union[str, BaseGeometry, List[BaseGeometry]],
+        geom_source: Union[str, GeometryLike, List[GeometryLike]],
         dissolve: bool = True
     ):
         geom, crs, bbox = self._initialize_geometry(geom_source, dissolve)
@@ -105,15 +110,13 @@ class XrGeometryProcessor:
             if crs is None:
                 raise ValueError("Input geometry has no CRS information")
 
-        # Case 2a: geom_source is a list of Shapely geometries.
-        elif isinstance(geom_source, list) and all(isinstance(g, BaseGeometry) for g in geom_source):
-            geometries = geom_source
-            crs = getattr(self, 'geom_crs', "EPSG:4326")
-
-        # Case 2b: geom_source is a single Shapely geometry.
-        elif isinstance(geom_source, BaseGeometry):
-            geometries = [geom_source]
-            crs = getattr(self, 'geom_crs', "EPSG:4326")
+            # Case 2a: geom_source is a list of Shapely geometries.
+            elif isinstance(geom_source, list) and all(hasattr(g, 'geom_type') for g in geom_source):
+                geometries = geom_source
+                crs = getattr(self, 'geom_crs', "EPSG:4326")
+            elif hasattr(geom_source, 'geom_type'):
+                geometries = [geom_source]
+                crs = getattr(self, 'geom_crs', "EPSG:4326")
 
         else:
             raise ValueError(
