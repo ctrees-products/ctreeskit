@@ -15,7 +15,7 @@ from shapely.ops import transform
 
 # Local application/library specific imports
 from arraylake import Client as arraylakeClient
-from common import ArraylakeDatasetConfig
+from .common import ArraylakeDatasetConfig
 
 
 class ArraylakeRepoInitializer:

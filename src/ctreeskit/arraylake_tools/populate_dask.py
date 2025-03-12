@@ -28,7 +28,7 @@ from icechunk.distributed import merge_sessions
 from arraylake import Client as arraylakeClient
 import rioxarray as rio
 import numpy as np
-from common import ArraylakeDatasetConfig
+from .common import ArraylakeDatasetConfig
 
 
 def process_annual_dataset_fn(token: str, repo_name: str, has_time: bool, unit_type: type,

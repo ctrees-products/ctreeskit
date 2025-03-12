@@ -1,5 +1,5 @@
 from arraylake import Client
-from common import ArraylakeDatasetConfig
+from .common import ArraylakeDatasetConfig
 from typing import Optional
 
 DEFAULT_BUCKET = "arraylake-datasets"
