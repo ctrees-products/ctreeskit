@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 import pandas as pd
-from xr_spatial_processor_module import create_area_ds_from_degrees_ds
+from .xr_spatial_processor_module import create_area_ds_from_degrees_ds
 
 
 def calculate_categorical_area_stats(categorical_ds, area_ds=None, classification_values=None):

@@ -8,7 +8,6 @@ version = "0.1.1"
 description = """
 CTrees toolkit for geospatial analysis and forest carbon monitoring.
 Core features include xarray-based analysis tools.
-Pro features include ArrayLake integration (requires API key).
 """
 readme = "README.md"
 requires-python = ">=3.10"
@@ -60,10 +59,10 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ctrees-products/arraylake-tools"
-Repository = "https://github.com/ctrees-products/arraylake-tools.git"
-Documentation = "https://github.com/ctrees-products/arraylake-tools#readme"
-"Bug Tracker" = "https://github.com/ctrees-products/arraylake-tools/issues"
+Homepage = "https://github.com/ctrees-products/ctreeskit"
+Repository = "https://github.com/ctrees-products/ctreeskit.git"
+Documentation = "https://github.com/ctrees-products/ctreeskit#readme"
+"Bug Tracker" = "https://github.com/ctrees-products/ctreeskit/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
