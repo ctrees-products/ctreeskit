@@ -38,8 +38,6 @@ dependencies = [
     "s3fs>=2025.3.0",
     "cf_xarray>=0.10.0",
     "arraylake>=0.15.0",
-    "icechunk>=0.2.0",
-    "zarr>=3.0.0",
     "python-dotenv>=1.0.0",
 ]
 
