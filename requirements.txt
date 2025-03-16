@@ -19,7 +19,7 @@ ipyleaflet>=0.17.4
 
 # External dependencies
 arraylake>=0.15.0
-icechunk>=0.2.2
+icechunk>=0.2.7
 
 # Development dependencies
 pytest>=7.4.0
