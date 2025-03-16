@@ -39,7 +39,7 @@ dependencies = [
     "cf_xarray>=0.10.2"
     "arraylake>=0.15.0",
     "icechunk>=0.2.0",
-    "zarr==3.0.3",
+    "zarr>=3.0.0",
     "python-dotenv>=1.0.0",
 ]
 
