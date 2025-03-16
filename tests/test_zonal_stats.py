@@ -73,10 +73,10 @@ class TestZonalStats(unittest.TestCase):
         # Class 2: 4 pixels
         # 1 row, 4 columns (total + 3 classes)
         self.assertEqual(result.shape, (1, 4))
-        self.assertEqual(result["0"][0], 9)
+        self.assertEqual(result["total_area"][0], 9)
         self.assertEqual(result["1"][0], 3)
         self.assertEqual(result["2"][0], 4)
-        self.assertEqual(result["3"][0], 2)
+        self.assertEqual(result["0"][0], 2)
 
     def test_static_raster_with_constant_area(self):
         """Test using a constant area per pixel."""
@@ -89,10 +89,10 @@ class TestZonalStats(unittest.TestCase):
         # Class 1: 6 ha (3 pixels * 2 ha)
         # Class 2: 8 ha (4 pixels * 2 ha)
         self.assertEqual(result.shape, (1, 4))
-        self.assertEqual(result["0"][0], 18)
+        self.assertEqual(result["total_area"][0], 18)
         self.assertEqual(result["1"][0], 6)
         self.assertEqual(result["2"][0], 8)
-        self.assertEqual(result["3"][0], 4)
+        self.assertEqual(result["0"][0], 4)
 
     def test_static_raster_with_area_dataarray(self):
         """Test using a DataArray for pixel areas."""
@@ -105,10 +105,10 @@ class TestZonalStats(unittest.TestCase):
         # Class 1: 1.5 ha (3 pixels * 0.5 ha)
         # Class 2: 2.0 ha (4 pixels * 0.5 ha)
         self.assertEqual(result.shape, (1, 4))
-        self.assertEqual(result["0"][0], 4.5)
+        self.assertEqual(result["total_area"][0], 4.5)
         self.assertEqual(result["1"][0], 1.5)
         self.assertEqual(result["2"][0], 2.0)
-        self.assertEqual(result["3"][0], 1.0)
+        self.assertEqual(result["0"][0], 1.0)
 
     @patch('ctreeskit.xr_analyzer.xr_zonal_stats_module.create_area_ds_from_degrees_ds')
     def test_static_raster_with_calculated_area(self, mock_create_area):
@@ -124,10 +124,10 @@ class TestZonalStats(unittest.TestCase):
 
         # Same expectations as previous test
         self.assertEqual(result.shape, (1, 4))
-        self.assertEqual(result["0"][0], 4.5)
+        self.assertEqual(result["total_area"][0], 4.5)
         self.assertEqual(result["1"][0], 1.5)
         self.assertEqual(result["2"][0], 2.0)
-        self.assertEqual(result["3"][0], 1.0)
+        self.assertEqual(result["0"][0], 1.0)
 
     def test_time_series_raster(self):
         """Test processing a time-series raster."""
@@ -139,31 +139,35 @@ class TestZonalStats(unittest.TestCase):
         self.assertTrue("time" in result.columns)
 
         # First time step should match our static test
-        self.assertEqual(result["0"][0], 9)
+        self.assertEqual(result["total_area"][0], 9)
         self.assertEqual(result["1"][0], 3)
         self.assertEqual(result["2"][0], 4)
-        self.assertEqual(result["3"][0], 2)
+        self.assertEqual(result["0"][0], 2)
 
         # Second time step has different class distribution
         # Class 1: 5 pixels
         # Class 2: 3 pixels
         # Class 0: 1 pixel
-        self.assertEqual(result["0"][1], 9)
+        self.assertEqual(result["total_area"][1], 9)
         self.assertEqual(result["1"][1], 5)
         self.assertEqual(result["2"][1], 3)
-        self.assertEqual(result["3"][1], 1)
+        self.assertEqual(result["0"][1], 1)
 
     def test_dataset_input(self):
         """Test using a Dataset as input."""
-        with patch('ctreeskit.xr_analyzer.xr_zonal_stats_module.isinstance', return_value=True) as mock_isinstance:
-            with patch('ctreeskit.xr_analyzer.xr_zonal_stats_module.to_datarray') as mock_to_dataarray:
-                mock_to_dataarray.return_value = self.static_raster
-                # This test will not run properly since we'd need to mock the Dataset.to_datarray method,
-                # but we can check that the conversion attempt was made
-                try:
-                    calculate_categorical_area_stats(self.dataset_raster)
-                except AttributeError:
-                    pass  # Expected, since we mocked isinstance but not the to_datarray method
+        result = calculate_categorical_area_stats(
+            self.dataset_raster, var_name="classification")
+
+        # With pixel counting, we expect:
+        # Total: 9 pixels
+        # Class 0: 2 pixels
+        # Class 1: 3 pixels
+        # Class 2: 4 pixels
+        self.assertEqual(result.shape, (1, 4))
+        self.assertEqual(result["total_area"][0], 9)
+        self.assertEqual(result["1"][0], 3)
+        self.assertEqual(result["2"][0], 4)
+        self.assertEqual(result["0"][0], 2)
 
     def test_specific_classification_values(self):
         """Test providing specific classification values."""
@@ -175,7 +179,8 @@ class TestZonalStats(unittest.TestCase):
 
         # Should have only columns for total, class 1, and class 2
         self.assertEqual(result.shape, (1, 3))
-        self.assertEqual(result["0"][0], 7)  # Total area of classes 1 and 2
+        # Total area of classes 1 and 2
+        self.assertEqual(result["total_area"][0], 7)
         self.assertEqual(result["1"][0], 3)  # Class 1
         self.assertEqual(result["2"][0], 4)  # Class 2
 

@@ -279,7 +279,7 @@ This module provides tools to:
 Calculate area statistics for different land cover classes or other categorical data:
 ```python
 import xarray as xr
-from ctreeskit.xr_analyzer import calculate_categorical_area_stats
+from ctreeskit import calculate_categorical_area_stats
 
 # Simple pixel counting
 result = calculate_categorical_area_stats(land_cover_raster)
@@ -288,13 +288,9 @@ result = calculate_categorical_area_stats(land_cover_raster)
 result = calculate_categorical_area_stats(land_cover_raster, area_ds=900)
 
 # Automatically calculate area from coordinates
-result = calculate_categorical_area_stats(land_cover_raster, area_ds=True)
+result = calculate_categorical_area_stats(categorical_ds, area_ds=None, var_name=None,
+                                 count_name='area_hectares', reshape=True, drop_zero=True)
 
-# Only analyze specific classes
-result = calculate_categorical_area_stats(
-    land_cover_raster, 
-    classification_values=[1, 2, 3, 4]
-)
 ```
 
 ## Time Series Support
@@ -306,20 +302,6 @@ static_result = calculate_categorical_area_stats(land_cover)
 # Time-series raster - returns a multi-row DataFrame with a "time" column
 timeseries_result = calculate_categorical_area_stats(land_cover_timeseries)
 ```
-## Results Format
-Results are returned as pandas DataFrames:
-
-```python
-# Output DataFrame columns:
-# - "0": Total area across all classes
-# - "1"..."n": Area for each class (columns match classification_values positions)
-# - "time": For time-series data
-
-# Example access:
-total_area = result["0"]
-forest_area = result["1"]  # If forest is the first class value
-
-```
 
 ## API Reference
 
@@ -329,42 +311,50 @@ forest_area = result["1"]  # If forest is the first class value
 ### Parameters
 - `categorical_ds` : xr.Dataset or xr.DataArray
   - Categorical raster data (with or without time dimension)
-  - If Dataset, it's converted to DataArray
+  - If Dataset, extracts the variable specified by var_name
 - `area_ds` : None, bool, float, or xr.DataArray, optional
   - None: count pixels (area=1.0 per pixel)
   - float/int: constant area per pixel
   - True: calculate area from coordinates
   - DataArray: custom area per pixel
-- `classification_values` : list, optional
-  - List of class values to analyze
-  - Default uses unique values from data
+- `var_name` : str, default None
+  - Name of the variable in the dataset containing class values
+- `count_name` : str, default 'area_hectares'
+  - Name for the metric column in the output DataFrame
+- `reshape` : bool, default True
+  - If True, pivots output to wide format with classes as columns
+  - If False, returns long format with class values in a column
+- `drop_zero` : bool, default True
+  - If True, removes class 0 (typically no-data) from results
 
 ### Returns
 
 - `pd.DataFrame`
   - Results with columns:
-    - "0": total area
+    - "total_area": total area
     - "1"..."n": per-class areas
     - "time": if input has time dimension
-
-### Helper Functions
-- `_calculate_area_stats(cl_values, da_class_t, area_ds)` - Calculate area statistics for a single time slice
+  - if datarray has flags:
+    - "total_area": total area
+    - "1"..."n": per-class areas ** col names = flag values
+    - "time": if input has time dimension
 
 ### Notes
 - The function treats 0 values specially, ensuring they remain 0 (useful for nodata values)
-- When `area_ds=True`, the module uses create_area_ds_from_degrees_ds() from the spatial processor module
-- For datasets with very large number of classes, consider explicitly providing classification_values with classes of interest
+- When `area_ds=True`, the module uses `create_area_ds_from_degrees_ds()` from the spatial processor module
+- For datasets with flag metadata, class columns will be renamed using flag meanings
+- For datasets with many classes, consider using drop_zero=True to exclude no-data values from results
 
 ### Examples
 #### Basic Usage
 ```python
 import xarray as xr
-from ctreeskit.xr_analyzer import calculate_categorical_area_stats
+from ctreeskit import calculate_categorical_area_stats
 
-# Load a land cover classification
-land_cover = xr.open_rasterio("landcover.tif")
+# Load a categorical raster (e.g., land cover classification)
+classification = xr.open_rasterio("landcover.tif")
 
-# Calculate area statistics (defaults to pixel counting)
-results = calculate_categorical_area_stats(land_cover)
+# Calculate pixel counts per class
+results = calculate_categorical_area_stats(classification)
 print(results)
 ```
