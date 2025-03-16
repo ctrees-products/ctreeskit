@@ -8,8 +8,8 @@ pip install ctreeskit
 
 ## Quick Links
 - [Installation Guide](#installation)
-- [Xr Analyzer ReadMe](./xr_analyzer.md)
-- [Arraylake Tools ReadMe](./arraylake_tools.md)
+- [Xr Analyzer ReadMe](./docs/xr_analyzer.md)
+- [Arraylake Tools ReadMe](./docs/arraylake_tools.md)
 
 ## Table of Contents
 1. [Installation](#installation)
@@ -87,7 +87,7 @@ A Python module for efficient geospatial operations on raster data using xarray,
 ## API Reference
 
 # XrSpatialProcessor
-[Xr Spatial Processor ReadMe](./xr_analyzer.md#xr_spatial_processor_module)
+[Xr Spatial Processor ReadMe](./docs/xr_analyzer.md#xr_spatial_processor_module)
 
 This module provides tools to:
 
@@ -98,7 +98,7 @@ This module provides tools to:
 - Create weighted masks based on geometry-pixel intersections
 
 # XrZonalStats
-[Xr Zonal Stats ReadMe](./xr_analyzer.md#xr_zonal_stats_module)
+[Xr Zonal Stats ReadMe](./docs/xr_analyzer.md#xr_zonal_stats_module)
 
 This module provides tools to:
 
@@ -108,7 +108,7 @@ This module provides tools to:
 - Generate tabular summaries as pandas DataFrames
 
 # ArraylakeTools
-[Arraylake Tools ReadMe](./arraylake_tools.md)
+[Arraylake Tools ReadMe](./docs/arraylake_tools.md)
 
 This module provides tools to:
 
