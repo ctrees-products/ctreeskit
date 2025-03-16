@@ -6,7 +6,7 @@ pandas>=2.1.4
 geopandas>=0.14.1
 shapely>=2.0.2
 pyproj>=3.6.1
-zarr==3.0.3
+zarr>=3.0.0
 scipy>=1.7.3
 s3fs>=2025.3.0
 cf_xarray>=0.10.2
