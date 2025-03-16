@@ -13,7 +13,7 @@ class ArraylakeRepoCreator:
       1. Direct creation using explicit parameters.
       2. Automated creation by processing JSON configuration files stored in S3.
 
-    It uses the Arraylake API client to create repositories and boto3 to interact with S3.
+    It uses the Arraylake API client to create repositories and sfs3 to interact with S3.
     """
 
     def __init__(

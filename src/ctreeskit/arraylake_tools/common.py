@@ -3,8 +3,7 @@ import json
 from typing import Optional, Dict, Any
 
 # Third-party library imports
-import boto3
-from botocore.exceptions import ClientError
+import s3fs
 import numpy as np
 import xarray as xr
 
@@ -55,7 +54,7 @@ class ArraylakeDatasetConfig:
         config_prefix : str
             Path prefix inside the S3 bucket for configuration files (default: "configs/").
         """
-        self.s3 = boto3.client('s3')
+        self.s3 = s3fs.S3FileSystem()
         self.bucket = bucket
         self.config_prefix = config_prefix
         self._config: Dict[str, Any] = {}
@@ -89,12 +88,12 @@ class ArraylakeDatasetConfig:
         ValueError
             If the configuration could not be loaded (e.g., due to a ClientError).
         """
-        key = f"{self.config_prefix}{dataset_name}.json"
+        key = f"{self.bucket}/{self.config_prefix}{dataset_name}.json"
         try:
-            response = self.s3.get_object(Bucket=self.bucket, Key=key)
-            self._config = json.loads(response['Body'].read().decode('utf-8'))
+            with self.s3.open(key, 'r') as f:
+                self._config = json.load(f)
             return self._config
-        except ClientError as e:
+        except Exception as e:
             raise ValueError(f"Could not load config for {dataset_name}: {e}")
 
     def list_datasets(self) -> list:
@@ -115,16 +114,13 @@ class ArraylakeDatasetConfig:
             If there is an error during listing (e.g., S3 access issues).
         """
         try:
-            response = self.s3.list_objects_v2(
-                Bucket=self.bucket,
-                Prefix=self.config_prefix
-            )
+            files = self.s3.ls(f"{self.bucket}/{self.config_prefix}")
             return [
-                obj['Key'].split('/')[-1].replace('.json', '')
-                for obj in response.get('Contents', [])
-                if obj['Key'].endswith('.json')
+                file.split('/')[-1].replace('.json', '')
+                for file in files
+                if file.endswith('.json')
             ]
-        except ClientError as e:
+        except Exception as e:
             raise ValueError(f"Could not list datasets: {e}")
 
     @property
