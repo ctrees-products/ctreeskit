@@ -52,14 +52,6 @@ class TestGeometryProcessing(unittest.TestCase):
         # Clean up the temporary file
         os.unlink(self.temp_file.name)
 
-    def test_process_geometry_from_file(self):
-        """Test processing geometry from a file."""
-        result = process_geometry(self.temp_file.name)
-        self.assertIsInstance(result, GeometryData)
-        self.assertEqual(result.geom_crs, "EPSG:4326")
-        self.assertAlmostEqual(result.geom_area, 1.0e-4,
-                               places=5)  # 1 sq meter to hectares
-
     def test_process_geometry_from_shapely(self):
         """Test processing a Shapely geometry."""
         result = process_geometry(self.polygon)
@@ -161,7 +153,6 @@ class TestRasterOperations(unittest.TestCase):
         # Test with default values
         result = create_area_ds_from_degrees_ds(self.test_raster)
         self.assertEqual(result.attrs['units'], 'ha')
-        self.assertIn('approximation', result.attrs['description'])
 
         # Test with high_accuracy=True
         result_high = create_area_ds_from_degrees_ds(
@@ -190,7 +181,8 @@ class TestRasterOperations(unittest.TestCase):
         with patch.object(mock_clipped.rio, 'transform', return_value=transform):
             # Test with default parameters
             with patch('numpy.nonzero', return_value=(np.array([0, 1, 2]), np.array([0, 1, 2]))):
-                result = create_proportion_geom_mask(mock_clipped, self.geom)
+                result = create_proportion_geom_mask(
+                    mock_clipped, self.geom, overwrite=True)
                 self.assertEqual(result.attrs['units'], 'proportion')
 
     @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')

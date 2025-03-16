@@ -121,7 +121,11 @@ def calculate_categorical_area_stats(categorical_ds, area_ds=None, var_name=None
 
     # Combine all results
     df = pd.concat(result, ignore_index=True)
-    class_var_name = getattr(classification, 'name', None) or var_name
+    class_var_name = "classification"
+    # Ensure the class_var_name is in the DataFrame columns
+    if class_var_name not in df.columns:
+        df.rename(columns={df.columns[0]: class_var_name}, inplace=True)
+
     # Apply dtype conversion
     df = df.astype({
         class_var_name: 'int32',
