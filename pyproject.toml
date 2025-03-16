@@ -39,6 +39,7 @@ dependencies = [
     "cf_xarray>=0.10.0",
     "arraylake>=0.15.0",
     "python-dotenv>=1.0.0",
+    "icechunk>=0.2.2",
 ]
 
 [project.optional-dependencies]
