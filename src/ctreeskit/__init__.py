@@ -9,6 +9,11 @@ from .xr_analyzer.xr_spatial_processor_module import (
     GeometryData
 )
 
+from .xr_analyzer.xr_common import (
+    get_single_var_data_array,
+    get_flag_meanings
+)
+
 from .xr_analyzer.xr_zonal_stats_module import (
     calculate_categorical_area_stats
 )
@@ -27,6 +32,10 @@ __all__ = [
     "create_proportion_geom_mask",
     "align_and_resample_ds",
     "GeometryData",
+
+    # From xr common
+    "get_single_var_data_array",
+    "get_flag_meanings",
 
     # From zonal stats
     "calculate_categorical_area_stats",
