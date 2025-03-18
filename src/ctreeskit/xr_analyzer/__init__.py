@@ -9,7 +9,7 @@ from .xr_spatial_processor_module import (
     clip_ds_to_geom,
     create_area_ds_from_degrees_ds,
     create_proportion_geom_mask,
-    align_and_resample_ds,
+    reproject_match_ds,
     GeometryData
 )
 
@@ -34,7 +34,7 @@ __all__ = [
     "clip_ds_to_geom",
     "create_area_ds_from_degrees_ds",
     "create_proportion_geom_mask",
-    "align_and_resample_ds",
+    "reproject_match_ds",
     "GeometryData",
 
     # From xr_common

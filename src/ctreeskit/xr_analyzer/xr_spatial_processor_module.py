@@ -236,11 +236,11 @@ def _measure(lat1, lon1, lat2, lon2) -> float:
     return distance
 
 
-def align_and_resample_ds(template_raster: Union[xr.DataArray, xr.Dataset],
-                          target_raster: Union[xr.DataArray, xr.Dataset],
-                          resampling_method=Resampling.nearest,
-                          return_area_grid: bool = True,
-                          output_in_ha: bool = True):
+def reproject_match_ds(template_raster: Union[xr.DataArray, xr.Dataset],
+                       target_raster: Union[xr.DataArray, xr.Dataset],
+                       resampling_method=Resampling.nearest,
+                       return_area_grid: bool = True,
+                       output_in_ha: bool = True):
     """
     Align and resample a target raster to match the spatial grid of a template raster.
 
@@ -430,4 +430,4 @@ __all__ = [
     "clip_ds_to_geom",
     "create_area_ds_from_degrees_ds",
     "create_proportion_geom_mask",
-    "align_and_resample_ds"]
+    "reproject_match_ds"]

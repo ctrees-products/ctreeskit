@@ -18,7 +18,7 @@ from ctreeskit import (
     clip_ds_to_geom,
     create_area_ds_from_degrees_ds,
     create_proportion_geom_mask,
-    align_and_resample_ds
+    reproject_match_ds
 )
 
 
@@ -187,7 +187,7 @@ class TestRasterOperations(unittest.TestCase):
 
     @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
     @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.create_area_ds_from_degrees_ds')
-    def test_align_and_resample_ds(self, mock_create_area, mock_clip):
+    def test_reproject_match_ds(self, mock_create_area, mock_clip):
         """Test aligning and resampling datasets."""
         # Configure mocks
         mock_clip.return_value = self.test_raster
@@ -197,13 +197,13 @@ class TestRasterOperations(unittest.TestCase):
 
         with patch.object(mock_clip.return_value.rio, 'reproject_match', return_value=mock_aligned):
             # Test with default parameters
-            result, area = align_and_resample_ds(
+            result, area = reproject_match_ds(
                 self.test_raster, self.test_raster)
             mock_clip.assert_called_once()
             mock_create_area.assert_called_once()
 
             # Test without area grid
-            result, area = align_and_resample_ds(
+            result, area = reproject_match_ds(
                 self.test_raster, self.test_raster, return_area_grid=False)
             self.assertIsNone(area)
 

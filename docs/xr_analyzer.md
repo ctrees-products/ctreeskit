@@ -33,7 +33,7 @@ This module provides tools to:
     - [process_geometry](#process_geometry)
     - [clip_ds_to_bbox](#clip_ds_to_bbox)
     - [clip_ds_to_geom](#clip_ds_to_geom)
-    - [align_and_resample_ds](#align_and_resample_ds)
+    - [reproject_match_ds](#reproject_match_ds)
     - [create_proportion_geom_mask](#create_proportion_geom_mask)
     - [create_area_ds_from_degrees_ds](#create_area_ds_from_degrees_ds)
 
@@ -102,7 +102,7 @@ Clip a raster to the extent of the provided geometry.
 **Returns:**
 - `xr.DataArray`: (or `xr.DataSet`) : Raster clipped to the geometry’s spatial extent.
 
-### `align_and_resample_ds`
+### `reproject_match_ds`
 
 Align and resample a target raster to match the spatial grid of a template raster.
 
@@ -115,7 +115,7 @@ Align and resample a target raster to match the spatial grid of a template raste
 
 **Example Usage:**
 
-- `mod_ds, area_ds = align_and_resample_ds(template_raster = clipped_ds, target_raster=new_ds)`
+- `mod_ds, area_ds = reproject_match_ds(template_raster = clipped_ds, target_raster=new_ds)`
 
 **Returns:**
 - `tuple`: A tuple (aligned_target, area_target).
@@ -253,7 +253,7 @@ Get flag meanings from the dataset attributes.
 import xarray as xr
 from ctreeskit import (
     process_geometry, clip_ds_to_bbox, clip_ds_to_geom,
-    align_and_resample_ds, create_proportion_geom_mask,
+    reproject_match_ds, create_proportion_geom_mask,
     create_area_ds_from_degrees_ds, calculate_categorical_area_stats
 )
 
@@ -268,7 +268,7 @@ clipped_geom_ds = clip_ds_to_geom(ds, geom_data)
 
 # Example: Align and resample dataset
 template_ds = xr.open_dataset('path_to_template_raster.tif')
-aligned_ds, area_grid = align_and_resample_ds(template_ds, ds)
+aligned_ds, area_grid = reproject_match_ds(template_ds, ds)
 
 # Example: Create proportion geometry mask
 geom_data = process_geometry('path_to_geojson_file.geojson')
