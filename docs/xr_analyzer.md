@@ -188,8 +188,6 @@ Calculate area statistics for each class in categorical raster data.
 - `var_name` (str, default None): Name of the variable in the dataset containing class values.
 - `count_name` (str, default "area_hectares"): Name for the metric column in the output DataFrame.
 - `reshape` (bool, default True): If True, pivots output to wide format with classes as columns.
-- `count_name` (str, default "area_hectares"): Name for the metric column in the output DataFrame.
-- `reshape` (bool, default True): If True, pivots output to wide format with classes as columns.
 - `drop_zero` (bool, default True): If True, removes class 0 (typically no-data) from results.
 
 **Example Usage:**
