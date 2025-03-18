@@ -269,7 +269,7 @@ def reproject_match_ds(template_raster: Union[xr.DataArray, xr.Dataset],
          - area_target is the grid of cell areas (or None if return_area_grid is False).
     """
     clipped_target = clip_ds_to_bbox(
-        template_raster, target_raster.rio.bounds(), drop_time=True)
+        target_raster, template_raster.rio.bounds(), drop_time=True)
     aligned_target = clipped_target.rio.reproject_match(
         template_raster, resampling=resampling_method)
     area_target = None
