@@ -50,21 +50,21 @@ def _prepare_area_ds(area_ds, single_var_da):
         template_ds = single_var_da.isel(time=0)
     else:
         template_ds = single_var_da
-
+    if area_ds is True:
+        return create_area_ds_from_degrees_ds(template_ds)
+    if area_ds is False or area_ds is None:
+        shape = (template_ds.sizes["y"], template_ds.sizes["x"])
+        const_area = np.full(shape, float(1.0))
+        return xr.DataArray(const_area, coords={'y': template_ds.y.values,
+                                                'x': template_ds.x.values},
+                            dims=["y", "x"])
     if isinstance(area_ds, (int, float)):
         shape = (template_ds.sizes["y"], template_ds.sizes["x"])
         const_area = np.full(shape, float(area_ds))
         return xr.DataArray(const_area, coords={'y': template_ds.y.values,
                                                 'x': template_ds.x.values},
                             dims=["y", "x"])
-    if area_ds is True:
-        return create_area_ds_from_degrees_ds(template_ds)
-    if area_ds is None:
-        shape = (template_ds.sizes["y"], template_ds.sizes["x"])
-        const_area = np.full(shape, float(1.0))
-        return xr.DataArray(const_area, coords={'y': template_ds.y.values,
-                                                'x': template_ds.x.values},
-                            dims=["y", "x"])
+
     return area_ds
 
 
