@@ -103,6 +103,7 @@ This module provides tools to:
 This module provides tools to:
 
 - Calculate area statistics for different classes in categorical rasters
+- Calculate area statistics for a combination of two categorical rasters combined
 - Support both time-series and static (non-temporal) raster data
 - Offer flexible area calculation options (pixel counts, constant values, or spatially-variable areas)
 - Generate tabular summaries as pandas DataFrames

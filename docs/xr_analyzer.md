@@ -194,15 +194,48 @@ Calculate area statistics for each class in categorical raster data.
 
 - `area_stats_df = calculate_categorical_area_stats(input_ds, area_ds=True)`
 
-**Returns:**
-- `pd.DataFrame`: Results with columns: class values as columns and "total_area".
-
-
-## xr_zonal_stats Notes
+**Notes:**
 - The function treats 0 values specially, ensuring they remain 0 (useful for nodata values)
 - When `area_ds=True`, the module uses `create_area_ds_from_degrees_ds()` from the spatial processor module
 - For datasets with flag metadata, class columns will be renamed using flag meanings
 - For datasets with many classes, consider using drop_zero=True to exclude no-data values from results
+
+**Returns:**
+- `pd.DataFrame`: Results with columns: class values as columns and "total_area".
+
+### `calculate_combined_categorical_area_stats`
+
+Calculate area statistics for unique combinations of two categorical datasets.
+
+**Parameters:**
+- `primary_ds` (xr.DataArray): First categorical raster dataset.
+- `secondary_ds` (xr.DataArray): Second categorical raster dataset.
+- `area_ds` (None, bool, float, or xr.DataArray, optional): Area per pixel.
+- `count_name` (str, default "area_hectares"): Name for the metric column in the output DataFrame.
+- `reshape` (bool, default True): If True, pivots output to wide format with classes as columns.
+- `drop_zero` (bool, default True): If True, removes combinations where either dataset has a value of 0.
+
+**Example Usage:**
+
+- `combined_stats_df = calculate_combined_categorical_area_stats(primary_ds, secondary_ds, area_ds=True)`
+
+**Returns:**
+- `pd.DataFrame`: Results with columns: original classifications, their flags, and total area.
+
+**Notes:**
+- The function ensures both datasets are aligned spatially using `reproject_match_ds`.
+- Class combinations are represented as strings (e.g., "1.2" for class 1 in the primary dataset and class 2 in the secondary dataset).
+- For datasets with flag metadata, class columns will be renamed using flag meanings from both datasets.
+- Use `drop_zero=True` to exclude combinations involving no-data values.
+- When `area_ds=True`, the module uses `create_area_ds_from_degrees_ds()` from the spatial processor module.
+- For large datasets, consider optimizing memory usage by processing in chunks.
+
+
+## xr_zonal_stats Notes
+- Ensure that input datasets have consistent dimensions and coordinate systems for accurate results.
+- Ensure that dataset has attribute "classification"
+- The module assumes that class value `0` typically represents no-data and provides an option to exclude it from the results.
+- Metadata such as flag meanings can be used to enhance the interpretability of the output.
 
 
 # xr_common module
