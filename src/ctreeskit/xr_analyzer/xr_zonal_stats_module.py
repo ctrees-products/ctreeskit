@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 import pandas as pd
-from .xr_spatial_processor_module import create_area_ds_from_degrees_ds
+from .xr_spatial_processor_module import create_area_ds_from_degrees_ds, reproject_match_ds
 from .xr_common import get_single_var_data_array, get_flag_meanings
 
 
@@ -57,7 +57,7 @@ def _prepare_area_ds(area_ds, single_var_da):
         return xr.DataArray(const_area, coords={'y': template_ds.y.values,
                                                 'x': template_ds.x.values},
                             dims=["y", "x"])
-    if isinstance(area_ds, bool):
+    if area_ds is True:
         return create_area_ds_from_degrees_ds(template_ds)
     if area_ds is None:
         shape = (template_ds.sizes["y"], template_ds.sizes["x"])
@@ -90,7 +90,7 @@ def _format_output(df, classification, count_name, reshape, drop_zero):
     class_var_name = "classification"
     if class_var_name not in df.columns:
         df.rename(columns={df.columns[0]: class_var_name}, inplace=True)
-    df = df.astype({class_var_name: 'int32', count_name: 'float32'})
+    df = df.astype({count_name: 'float32'})
 
     if "time" in df.columns:
         d = df[['time', class_var_name, count_name]]
@@ -127,6 +127,9 @@ def _format_output_reshaped(d, classification, drop_zero=True):
         Formatted DataFrame with renamed columns and total area column
     """
     d.columns.name = None
+    d.columns = [int(col) if isinstance(col, (int, float))
+                 and col.is_integer() else col for col in d.columns]
+
     flag_meanings = get_flag_meanings(classification)
     d = _rename_columns(d, flag_meanings)
     if drop_zero and 0 in d.columns:
