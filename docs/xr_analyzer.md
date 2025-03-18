@@ -258,7 +258,7 @@ from ctreeskit import (
 )
 
 # Example: Clip dataset to bounding box
-ds = xr.open_dataset('path_to_raster_data.nc')
+ds = xr.open_dataset('path_to_raster_data.tif')
 bbox = (-120.0, 35.0, -119.0, 36.0)
 clipped_ds = clip_ds_to_bbox(ds, bbox)
 
@@ -267,7 +267,7 @@ geom_data = process_geometry('path_to_geojson_file.geojson')
 clipped_geom_ds = clip_ds_to_geom(ds, geom_data)
 
 # Example: Align and resample dataset
-template_ds = xr.open_dataset('path_to_template_raster.nc')
+template_ds = xr.open_dataset('path_to_template_raster.tif')
 aligned_ds, area_grid = align_and_resample_ds(template_ds, ds)
 
 # Example: Create proportion geometry mask
