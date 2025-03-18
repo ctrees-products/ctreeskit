@@ -6,7 +6,8 @@ from .xr_common import get_single_var_data_array, get_flag_meanings
 
 
 def calculate_categorical_area_stats(categorical_ds, area_ds=None, var_name=None,
-                                     count_name='area_hectares', reshape=True, drop_zero=True):
+                                     count_name='area_hectares', reshape=True, drop_zero=True,
+                                     is_combined=False):
     """
     Calculate area statistics for each class in categorical raster data.
 
@@ -40,7 +41,8 @@ def calculate_categorical_area_stats(categorical_ds, area_ds=None, var_name=None
     single_var_da = get_single_var_data_array(categorical_ds, var_name)
     area_ds = _prepare_area_ds(area_ds, single_var_da)
     result = _process_single_var_with_area(single_var_da, area_ds, count_name)
-    df = _format_output(result, single_var_da, count_name, reshape, drop_zero)
+    df = _format_output(result, single_var_da, count_name,
+                        reshape, drop_zero, is_combined)
     return df
 
 
@@ -85,7 +87,7 @@ def _process_single_var_with_area(single_var_da, area_da, count_name):
     return pd.concat(result, ignore_index=True)
 
 
-def _format_output(df, classification, count_name, reshape, drop_zero):
+def _format_output(df, classification, count_name, reshape, drop_zero,  is_combined=False):
     """Format the output DataFrame."""
     class_var_name = "classification"
     if class_var_name not in df.columns:
@@ -104,7 +106,8 @@ def _format_output(df, classification, count_name, reshape, drop_zero):
             d.index = [0]
 
     if reshape:
-        d = _format_output_reshaped(d, classification, drop_zero)
+        if not is_combined:
+            d = _format_output_reshaped(d, classification, drop_zero)
     return d
 
 
