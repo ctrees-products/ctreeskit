@@ -20,7 +20,8 @@ from .xr_common import (
 
 from .xr_zonal_stats_module import (
     calculate_categorical_area_stats,
-    calculate_combined_categorical_area_stats
+    calculate_combined_categorical_area_stats,
+    create_combined_classification
 )
 
 __version__ = "0.1.1"
@@ -44,5 +45,6 @@ __all__ = [
 
     # From zonal stats
     "calculate_categorical_area_stats",
-    "calculate_combined_categorical_area_stats"
+    "calculate_combined_categorical_area_stats",
+    "create_combined_classification"
 ]

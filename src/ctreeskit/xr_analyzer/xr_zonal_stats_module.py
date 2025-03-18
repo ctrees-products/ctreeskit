@@ -75,18 +75,10 @@ def calculate_combined_categorical_area_stats(primary_ds, secondary_ds, area_ds=
     pd.DataFrame
         Results with columns: original classifications, their flags, and total area.
     """
-    # Ensure the two datasets have the same dimensions
     matched_secondary, area_ds = reproject_match_ds(primary_ds, secondary_ds)
 
-    # Combine the two datasets into a single "combined classification" as a float
-    combined_classification = primary_ds.astype(
-        float) + (matched_secondary.astype(float) / 10)
-    # Optionally drop combinations where either dataset has a value of 0
-    if drop_zero:
-        combined_classification = combined_classification.where(
-            (matched_secondary != 0) & (primary_ds != 0), 0
-        )
-    combined_classification = combined_classification.astype(str)
+    combined_classification = create_combined_classification(
+        primary_ds, matched_secondary)
 
     # Run the existing calculate_categorical_area_stats function
     result = calculate_categorical_area_stats(
@@ -99,6 +91,18 @@ def calculate_combined_categorical_area_stats(primary_ds, secondary_ds, area_ds=
             result, primary_ds, matched_secondary, drop_zero)
 
     return result
+
+
+def create_combined_classification(primary_ds, secondary_ds, drop_zero=True):
+    # Combine the two datasets into a single "combined classification" as a float
+    combined_classification = primary_ds.astype(
+        float) + (secondary_ds.astype(float) / 10)
+    # Optionally drop combinations where either dataset has a value of 0
+    if drop_zero:
+        combined_classification = combined_classification.where(
+            (secondary_ds != 0) & (primary_ds != 0), 0
+        )
+    return combined_classification
 
 
 def _format_output_reshaped_double(combined_df, primary_ds, secondary_ds, drop_zero=True):
@@ -268,4 +272,5 @@ def _rename_columns(input_df, flag_meanings):
 
 
 __all__ = ["calculate_categorical_area_stats",
-           "calculate_combined_categorical_area_stats"]
+           "calculate_combined_categorical_area_stats",
+           "create_combined_classification"]

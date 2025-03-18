@@ -16,7 +16,8 @@ from .xr_analyzer.xr_common import (
 
 from .xr_analyzer.xr_zonal_stats_module import (
     calculate_categorical_area_stats,
-    calculate_combined_categorical_area_stats
+    calculate_combined_categorical_area_stats,
+    create_combined_classification
 )
 from .arraylake_tools.common import ArraylakeDatasetConfig
 from .arraylake_tools.create import ArraylakeRepoCreator
@@ -41,6 +42,7 @@ __all__ = [
     # From zonal stats
     "calculate_categorical_area_stats",
     "calculate_combined_categorical_area_stats",
+    "create_combined_classification"
 
     # From arraylake tools
     "ArraylakeDatasetConfig",
