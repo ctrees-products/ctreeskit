@@ -212,14 +212,15 @@ def _format_output_reshaped_double(combined_df, primary_ds, secondary_ds, drop_z
                 # If mapping fails, keep the original column name
                 rename_dict[col] = col
 
+    # Drop zero column if requested
+    if drop_zero and (0 in combined_df.columns or "0.0" in combined_df.columns):
+        combined_df = combined_df.drop(
+            columns=[col for col in [0, "0.0"] if col in combined_df.columns])
+
     # Rename columns using the constructed dictionary
     if rename_dict:
         combined_df.columns = combined_df.columns.map(str)
         combined_df = combined_df.rename(columns=rename_dict)
-
-    # Drop zero column if requested
-    if drop_zero and "0.0" in combined_df.columns:
-        combined_df = combined_df.drop(columns=["0.0"])
 
     # Add total area column
     combined_df['total_area'] = combined_df.sum(axis=1, numeric_only=True)
