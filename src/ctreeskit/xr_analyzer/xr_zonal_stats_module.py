@@ -105,6 +105,71 @@ def create_combined_classification(primary_ds, secondary_ds, drop_zero=True):
     return combined_classification
 
 
+def calculate_stats_with_categories(categorical_da: xr.DataArray,
+                                    continuous_da: xr.DataArray):
+    """
+    Calculate statistics for continuous data masked by categories.
+
+    Args:
+        categorical_da (xr.DataArray): Categorical mask data
+        continuous_da (xr.DataArray): Continuous value data
+
+    Returns:
+        List[Dict]: Statistics for each category
+    """
+    # Get unique categories (excluding 0 and NaN)
+    continuous_matched, _ = reproject_match_ds(
+        categorical_da, continuous_da, return_area_grid=False)
+   # Initialize results dictionary
+
+    # Check if the categorical DataArray has a time dimension
+    if "time" in categorical_da.dims:
+        # Iterate over each time step
+        for t in categorical_da.time:
+            # Select the data for the current time step
+            categorical_t = categorical_da.sel(time=t)
+            continuous_t = continuous_matched.sel(time=t)
+            results = _calculate_cont_cat_stats(categorical_t, continuous_t)
+            results["time"].append(t.values)
+    else:
+        results = _calculate_cont_cat_stats(categorical_da, continuous_matched)
+    return pd.DataFrame(results)
+
+
+def _calculate_cont_cat_stats(categorical_da, continuous_da):
+    categories = categorical_da.where(categorical_da > 0).unique().values
+    categories = categories[~np.isnan(categories)].astype(float)
+    results = {
+        "time": [],
+        "category": [],
+        "mean_value": [],
+        "std_value": []
+    }
+    # Calculate statistics for each category
+    for category in categories:
+        # Create mask for the current category
+        mask = categorical_da == category
+
+        # Calculate area
+
+        # Mask the continuous data for the current category
+        masked_values = continuous_da.where(
+            mask & (continuous_da > 0))
+
+        # Calculate mean and standard deviation, handling empty data
+        if masked_values.count() > 0:
+            mean_value = float(masked_values.mean())
+            std_value = float(masked_values.std())
+        else:
+            mean_value = None
+            std_value = None
+            # Append results
+        results["category"].append(int(category))
+        results["mean_value"].append(mean_value)
+        results["std_value"].append(std_value)
+    return results
+
+
 def _format_output_reshaped_double(combined_df, primary_ds, secondary_ds, drop_zero=True):
     """
     Reshape and format the output DataFrame for two categories.
