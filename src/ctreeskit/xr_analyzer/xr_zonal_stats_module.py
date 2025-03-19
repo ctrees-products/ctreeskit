@@ -214,6 +214,7 @@ def _format_output_reshaped_double(combined_df, primary_ds, secondary_ds, drop_z
 
     # Rename columns using the constructed dictionary
     if rename_dict:
+        combined_df.columns = combined_df.columns.map(str)
         combined_df = combined_df.rename(columns=rename_dict)
 
     # Drop zero column if requested
