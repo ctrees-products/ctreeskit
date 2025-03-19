@@ -219,7 +219,7 @@ def _format_output_reshaped_double(combined_df, primary_ds, secondary_ds, drop_z
 
     # Drop zero column if requested
     if drop_zero and "0.0" in combined_df.columns:
-        combined_df = combined_df.drop(columns=[0])
+        combined_df = combined_df.drop(columns=["0.0"])
 
     # Add total area column
     combined_df['total_area'] = combined_df.sum(axis=1, numeric_only=True)
