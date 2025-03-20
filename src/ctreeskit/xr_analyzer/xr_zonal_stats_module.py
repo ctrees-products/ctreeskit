@@ -150,8 +150,6 @@ def _calculate_cont_cat_stats(categorical_da, continuous_da):
         # Create mask for the current category
         mask = categorical_da == category
 
-        # Calculate area
-
         # Mask the continuous data for the current category
         masked_values = continuous_da.where(
             mask & (continuous_da > 0))

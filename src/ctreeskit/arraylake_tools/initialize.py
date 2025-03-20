@@ -162,7 +162,7 @@ class ArraylakeRepoInitializer:
 
         return geometry.bounds
 
-    def initialize_all_groups(self) -> None:
+    def initialize_all_groups(self, fill_value=-1) -> None:
         """
         Initialize all variable groups defined in the configuration.
 
@@ -179,9 +179,9 @@ class ArraylakeRepoInitializer:
             raise ValueError("No groups defined in the configuration.")
         for group_name in groups.keys():
             print(f"Initializing group: {group_name}")
-            self.initialize_group(group_name)
+            self.initialize_group(group_name, fill_value)
 
-    def initialize_group(self, group_name: str) -> None:
+    def initialize_group(self, group_name: str, fill_value=-1) -> None:
         """
         Initialize a specific group from the configuration.
 
@@ -226,7 +226,8 @@ class ArraylakeRepoInitializer:
                 base_rasters[var_name] = f"{var_config['s3_path_prefix']}{start_date.year}{var_config['s3_path_suffix']}"
 
         # Create dataset schema for the group.
-        ds = self.create_schema(group_name, base_rasters, var_configs)
+        ds = self.create_schema(group_name, base_rasters,
+                                var_configs, fill_value)
 
         # Determine chunk sizes for dimensions.
         chunks = {"time": 1, "y": 2000, "x": 2000} if self.has_time else {
@@ -250,13 +251,14 @@ class ArraylakeRepoInitializer:
         self,
         group_name: str,
         base_rasters: Dict[str, str],
-        var_configs: Dict[str, Dict[str, Any]]
+        var_configs: Dict[str, Dict[str, Any]],
+        fill_value=-1
     ) -> xr.Dataset:
         """
         Create an xarray Dataset schema based on the configuration and base rasters.
 
         This method establishes coordinates (x, y, and optionally time) and creates data variables 
-        using lazy Dask arrays (with zeros filled in). The resolution is determined from the first 
+        using lazy Dask arrays (with -1 filled in). The resolution is determined from the first 
         variable's raster. CF metadata is then added to the dataset.
 
         Parameters
@@ -310,10 +312,9 @@ class ArraylakeRepoInitializer:
             dtype = np.float32 if var_config['unit_type'] == 'float' else np.int16
             data_vars[var_name] = (
                 self.dims,
-                da.zeros(shape, dtype=dtype,
-                         chunks=default_chunks, fill_value=-1)
+                da.full(shape, fill_value=fill_value,
+                        dtype=dtype, chunks=default_chunks)
             )
-
         ds = xr.Dataset(data_vars=data_vars, coords=coords)
         # Add CF metadata to dataset using ArraylakeDatasetConfig helper.
         return ArraylakeDatasetConfig().add_cf_metadata(ds, self.config)
