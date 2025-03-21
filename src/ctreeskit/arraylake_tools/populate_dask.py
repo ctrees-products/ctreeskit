@@ -228,6 +228,9 @@ class ArraylakeRepoPopulator:
         with ThreadPoolExecutor() as executor:
             # Loop through each variable: if time is enabled, process for each year.
             for var_name, var_config in group_config.items():
+                # Skip the 'time' configuration
+                if var_name == "time":
+                    continue
                 if unit_type:
                     var_config['unit_type'] = unit_type
                 if time_config:
