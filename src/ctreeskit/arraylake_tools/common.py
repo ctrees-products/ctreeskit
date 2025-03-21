@@ -225,7 +225,7 @@ class ArraylakeDatasetConfig:
             raise ValueError(f"Group {group_name} not found in config")
         return groups[group_name]
 
-    def add_cf_metadata(self, ds: xr.Dataset, config: Optional[Dict[str, Any]] = None, fill_value=-1) -> xr.Dataset:
+    def add_cf_metadata(self, ds: xr.Dataset, config: Optional[Dict[str, Any]] = None) -> xr.Dataset:
         """
         Add CF (Climate and Forecast) compliant metadata to an xarray Dataset.
 
@@ -242,8 +242,6 @@ class ArraylakeDatasetConfig:
         config : Optional[Dict[str, Any]]
             An optional configuration dictionary. If provided, it will be used
             instead of the internally stored configuration (self._config).
-        fill_value : Int, default to -1
-            An optional fill value for dataset, defaulted set to -1.
         Returns
         -------
         xr.Dataset
@@ -305,13 +303,11 @@ class ArraylakeDatasetConfig:
                     "flag_meanings": flag_meanings,
                     "units": "class",
                     "classification_type": classification_type,
-                    "_FillValue": np.int16(fill_value)
                 })
             # For variables with a defined unit.
             elif 'unit_name' in var_config:
                 attrs.update({
                     "units": var_config['unit_name'],
-                    "_FillValue": np.int16(fill_value) if var_config.get('unit_type') == 'int' else np.float32(fill_value)
                 })
 
             # Update the variable's attributes if any were determined.
