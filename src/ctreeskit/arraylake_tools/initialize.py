@@ -233,7 +233,7 @@ class ArraylakeRepoInitializer:
         chunks = {"time": 1, "y": 2000, "x": 2000} if self.has_time else {
             "y": 2000, "x": 2000}
         encoding = self._construct_chunks_encoding(
-            ds, chunks)
+            ds, chunks, fill_value)
         ds = ds.chunk(chunks)
 
         # Write dataset to Zarr storage.
@@ -313,14 +313,14 @@ class ArraylakeRepoInitializer:
             dtype = np.float32 if var_config['unit_type'] == 'float' else np.int16
             data_vars[var_name] = (
                 self.dims,
-                da.full(shape, fill_value=fill_value,
+                da.ones(shape,
                         dtype=dtype, chunks=default_chunks)
             )
         ds = xr.Dataset(data_vars=data_vars, coords=coords)
         # Add CF metadata to dataset using ArraylakeDatasetConfig helper.
         return ArraylakeDatasetConfig().add_cf_metadata(ds, self.config)
 
-    def _construct_chunks_encoding(self, ds: xr.Dataset, chunks: dict) -> dict:
+    def _construct_chunks_encoding(self, ds: xr.Dataset, chunks: dict, fill_value=-1) -> dict:
         """
         Construct an encoding dictionary for writing an xarray Dataset to Zarr storage.
 
@@ -340,7 +340,9 @@ class ArraylakeRepoInitializer:
             An encoding dictionary suitable for use with ds.to_zarr().
         """
         return {
-            name: {"chunks": tuple(chunks.get(
-                dim, var.sizes[dim]) for dim in var.dims)}
+            name: {
+                "chunks": tuple(chunks.get(dim, var.sizes[dim]) for dim in var.dims),
+                "_FillValue": fill_value  # Add the fill_value to the encoding
+            }
             for name, var in ds.data_vars.items()
         }
