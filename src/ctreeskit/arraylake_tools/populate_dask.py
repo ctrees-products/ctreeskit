@@ -193,7 +193,7 @@ class ArraylakeRepoPopulator:
         self.dims = self.config.get('dim', ['x', 'y'])
         self.has_time = 'time' in self.dims
 
-    def populate_group(self, group_name: str) -> None:
+    def populate_group(self, group_name: str, unit_type: str = None) -> None:
         """
         Populate the specified configuration group with raster data.
 
@@ -224,9 +224,12 @@ class ArraylakeRepoPopulator:
             years = pd.date_range(start_date, end_date,
                                   freq=freq).year.tolist()
         futures = []
+
         with ThreadPoolExecutor() as executor:
             # Loop through each variable: if time is enabled, process for each year.
             for var_name, var_config in group_config.items():
+                if unit_type:
+                    var_config['unit_type'] == unit_type
                 if time_config:
                     s3_path_prefix = var_config.get("s3_path_prefix")
                     s3_path_suffix = var_config.get("s3_path_suffix")
