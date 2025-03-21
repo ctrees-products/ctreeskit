@@ -229,7 +229,7 @@ class ArraylakeRepoPopulator:
             # Loop through each variable: if time is enabled, process for each year.
             for var_name, var_config in group_config.items():
                 if unit_type:
-                    var_config['unit_type'] == unit_type
+                    var_config['unit_type'] = unit_type
                 if time_config:
                     s3_path_prefix = var_config.get("s3_path_prefix")
                     s3_path_suffix = var_config.get("s3_path_suffix")
