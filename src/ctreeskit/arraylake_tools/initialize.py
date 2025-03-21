@@ -238,11 +238,11 @@ class ArraylakeRepoInitializer:
 
         # Write dataset to Zarr storage.
         if group_name != "root":
-            ds.to_zarr(self.session.store, group=group_name,
-                       mode="w", encoding=encoding, compute=False)
+            ds.drop_encoding().to_zarr(self.session.store, group=group_name,
+                                       mode="w", encoding=encoding, compute=False)
         else:
-            ds.to_zarr(self.session.store, mode="w",
-                       encoding=encoding, compute=False)
+            ds.drop_encoding().to_zarr(self.session.store, mode="w",
+                                       encoding=encoding, compute=False)
         print(f"initialized group: {group_name}")
 
         # Commit changes to the repository session.
