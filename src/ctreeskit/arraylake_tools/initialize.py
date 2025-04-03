@@ -342,7 +342,7 @@ class ArraylakeRepoInitializer:
         return {
             name: {
                 "chunks": tuple(chunks.get(dim, var.sizes[dim]) for dim in var.dims),
-                "_FillValue": fill_value  # Add the fill_value to the encoding
+                "fill_value": fill_value  # Add the fill_value to the encoding
             }
             for name, var in ds.data_vars.items()
         }

@@ -1,5 +1,5 @@
 # Core dependencies
-xarray>=2023.11.0
+xarray>=2025.03.1
 rioxarray>=0.15.0
 numpy>=1.26.2
 pandas>=2.1.4
