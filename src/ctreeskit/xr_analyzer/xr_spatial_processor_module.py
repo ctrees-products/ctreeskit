@@ -172,7 +172,20 @@ def clip_ds_to_bbox(input_ds: Union[xr.DataArray, xr.Dataset], bbox: tuple, drop
     -------
     xr.DataArray
          The raster clipped to the specified bounding box.
+
+    Raises
+    ------
+    ValueError
+        If bbox is not a tuple of length 4 or contains non-numeric values.
     """
+    # Validate bbox
+    if not isinstance(bbox, tuple) or len(bbox) != 4:
+        raise ValueError(
+            "bbox must be a tuple of length 4 (minx, miny, maxx, maxy).")
+    if not all(isinstance(coord, (int, float)) for coord in bbox):
+        raise ValueError(
+            "All elements of bbox must be numeric (int or float).")
+
     minx, miny, maxx, maxy = bbox
     clipped = input_ds.rio.clip_box(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
     if drop_time and 'time' in clipped.dims:
@@ -227,9 +240,25 @@ def clip_ds_to_geom(input_ds: Union[xr.DataArray, xr.Dataset], geom_source: Exte
     return result
 
 
-def _measure(lat1, lon1, lat2, lon2) -> float:
+def _measure(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Compute the geodesic distance (in meters) between two points on the WGS84 ellipsoid.
+
+    Parameters
+    ----------
+    lat1 : float
+        Latitude of the first point in decimal degrees.
+    lon1 : float
+        Longitude of the first point in decimal degrees.
+    lat2 : float
+        Latitude of the second point in decimal degrees.
+    lon2 : float
+        Longitude of the second point in decimal degrees.
+
+    Returns
+    -------
+    float
+        The geodesic distance between the two points in meters.
     """
     geod = Geod(ellps="WGS84")
     _, _, distance = geod.inv(lon1, lat1, lon2, lat2)

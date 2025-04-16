@@ -92,7 +92,8 @@ def process_annual_dataset_fn(token: str, repo_name: str, has_time: bool, unit_t
         region = {"time": "auto", "x": slice(None), "y": slice(None)}
 
     # Remove unused variable and problematic attributes.
-    ds = ds.drop_vars(['spatial_ref'])
+    if 'spatial_ref' in ds:
+        ds = ds.drop_vars(['spatial_ref'])
     for attr in ["add_offset", "scale_factor"]:
         if attr in ds[var_name].attrs:
             del ds[var_name].attrs[attr]
@@ -141,7 +142,7 @@ class ArraylakeRepoPopulator:
         Flag indicating whether the dataset includes a time dimension.
     """
 
-    def __init__(self, token: str, dataset_name: str = None, config_dict: dict = None):
+    def __init__(self, token: str, dataset_name: str = None, config_dict: dict = None, max_workers: int = 4):
         """
         Initialize Populator with a dataset configuration.
 
@@ -157,6 +158,8 @@ class ArraylakeRepoPopulator:
             Dataset name used to load the configuration from S3. Mutually exclusive with config_dict.
         config_dict : dict, optional
             A configuration dictionary provided directly. Mutually exclusive with dataset_name.
+        num_workers : int, optional
+            Number of worker threads for concurrent processing. Default is 4.
 
         Raises
         ------
@@ -182,6 +185,7 @@ class ArraylakeRepoPopulator:
             "repo", f"{self.organization}/{self.dataset_name}")
         self.crs = self.config.get('crs', 'EPSG:4326')
         self.token = token
+        self.max_workers = max_workers
 
         # Initialize Arraylake client and repository session.
         self.client = arraylakeClient(token=token)
@@ -225,7 +229,7 @@ class ArraylakeRepoPopulator:
                                   freq=freq).year.tolist()
         futures = []
 
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Loop through each variable: if time is enabled, process for each year.
             for var_name, var_config in group_config.items():
                 # Skip the 'time' configuration

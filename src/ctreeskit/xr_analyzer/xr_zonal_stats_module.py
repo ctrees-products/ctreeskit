@@ -1,13 +1,20 @@
 import numpy as np
 import xarray as xr
 import pandas as pd
+from typing import Optional, Union
 from .xr_spatial_processor_module import create_area_ds_from_degrees_ds, reproject_match_ds
 from .xr_common import get_single_var_data_array, get_flag_meanings
 
 
-def calculate_categorical_area_stats(categorical_ds, area_ds=None, var_name=None,
-                                     count_name='area_hectares', reshape=True, drop_zero=True,
-                                     single_class=True):
+def calculate_categorical_area_stats(
+    categorical_ds: Union[xr.Dataset, xr.DataArray],
+    area_ds: Optional[Union[bool, float, xr.DataArray]] = None,
+    var_name: Optional[str] = None,
+    count_name: str = 'area_hectares',
+    reshape: bool = True,
+    drop_zero: bool = True,
+    single_class: bool = True
+) -> pd.DataFrame:
     """
     Calculate area statistics for each class in categorical raster data.
 
@@ -228,25 +235,21 @@ def _format_output_reshaped_double(combined_df, primary_ds, secondary_ds, drop_z
 
 def _prepare_area_ds(area_ds, single_var_da):
     """Prepare the area DataArray based on the input type."""
-    if "time" in single_var_da.dims:
-        template_ds = single_var_da.isel(time=0)
-    else:
-        template_ds = single_var_da
+    template_ds = single_var_da.isel(
+        time=0) if "time" in single_var_da.dims else single_var_da
+
     if area_ds is True:
         return create_area_ds_from_degrees_ds(template_ds)
-    if area_ds is False or area_ds is None:
-        shape = (template_ds.sizes["y"], template_ds.sizes["x"])
-        const_area = np.full(shape, float(1.0))
-        return xr.DataArray(const_area, coords={'y': template_ds.y.values,
-                                                'x': template_ds.x.values},
-                            dims=["y", "x"])
+    if area_ds in [False, None]:
+        # set to pixel count
+        area_ds = 1.0
     if isinstance(area_ds, (int, float)):
-        shape = (template_ds.sizes["y"], template_ds.sizes["x"])
-        const_area = np.full(shape, float(area_ds))
-        return xr.DataArray(const_area, coords={'y': template_ds.y.values,
-                                                'x': template_ds.x.values},
-                            dims=["y", "x"])
-
+        return xr.DataArray(
+            np.full((template_ds.sizes["y"],
+                    template_ds.sizes["x"]), float(area_ds)),
+            coords={'y': template_ds.y.values, 'x': template_ds.x.values},
+            dims=["y", "x"]
+        )
     return area_ds
 
 
