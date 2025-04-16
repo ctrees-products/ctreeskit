@@ -4,14 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ctreeskit"
-version = "0.1.0"
+version = "0.1.2"
 description = """
 CTrees toolkit for geospatial analysis and forest carbon monitoring.
 Core features include xarray-based analysis tools.
-Pro features include ArrayLake integration (requires API key).
 """
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 keywords = ["xarray", "geospatial", "zonal-statistics", "carbon", "biomass"]
 classifiers = [
@@ -19,7 +18,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: GIS",
 ]
 authors = [
@@ -28,14 +27,19 @@ authors = [
 
 
 dependencies = [
-    "xarray>=2023.11.0",
+    "xarray>=2025.03.1",
     "rioxarray>=0.15.0",
     "numpy>=1.26.2",
     "pandas>=2.1.4",
     "geopandas>=0.14.1",
     "shapely>=2.0.2",
     "pyproj>=3.6.1",
-    "scipy>=1.7.3"
+    "scipy>=1.7.3",
+    "s3fs>=2025.3.0",
+    "cf_xarray>=0.10.0",
+    "arraylake>=0.15.0",
+    "python-dotenv>=1.0.0",
+    "icechunk>=0.2.2",
 ]
 
 [project.optional-dependencies]
@@ -47,22 +51,16 @@ parallel = [
     "dask>=2023.12.1",
     "distributed>=2023.12.1",
 ]
-pro = [
-    "arraylake>=0.15.0",
-    "icechunk>=0.2.0",
-    "zarr==3.0.3",
-    "python-dotenv>=1.0.0",
-]
 
 all = [
-    "ctreeskit[interactive,parallel,pro]",
+    "ctreeskit[interactive,parallel]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/ctrees-products/arraylake-tools"
-Repository = "https://github.com/ctrees-products/arraylake-tools.git"
-Documentation = "https://github.com/ctrees-products/arraylake-tools#readme"
-"Bug Tracker" = "https://github.com/ctrees-products/arraylake-tools/issues"
+Homepage = "https://github.com/ctrees-products/ctreeskit"
+Repository = "https://github.com/ctrees-products/ctreeskit.git"
+Documentation = "https://github.com/ctrees-products/ctreeskit#readme"
+"Bug Tracker" = "https://github.com/ctrees-products/ctreeskit/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,37 @@
+{
+    "dataset_name": "EXAMPLE_DATASET_NAME",
+    "long_name": "Categorical Raster with x and y dims",
+    "organization": "ORGANIZATION_NAME",
+    "repo": "ORGANIZATION_NAME/EXAMPLE_DATASET_NAME",
+    "crs": "EPSG:4326",
+    "dim": [
+        "x",
+        "y"
+    ],
+    "groups": {
+        "EXAMPLE_CLASSIFICATION_TYPE": {
+            "classification": {
+                "s3_path": "{EXAMPLE_S3_PATH}.tif",
+                "is_mosaiced": true,
+                "unit_type": "int",
+                "classification_type": "EXAMPLE_CLASSIFICATION_TYPE",
+                "values": {
+                    "0": "NONE",
+                    "1": "EXAMPLE_CLASSIFICATION_TYPE"
+                }
+            }
+        },
+        "SECOND_EXAMPLE_CLASSIFICATION_TYPE": {
+            "classification": {
+                "s3_path": "{SECOND_EXAMPLE_S3_PATH}.tif",
+                "is_mosaiced": true,
+                "unit_type": "int",
+                "classification_type": "SECOND_EXAMPLE_CLASSIFICATION_TYPE",
+                "values": {
+                    "0": "NONE",
+                    "1": "SECOND_EXAMPLE_CLASSIFICATION_TYPE"
+                }
+            }
+        }
+    }
+}
