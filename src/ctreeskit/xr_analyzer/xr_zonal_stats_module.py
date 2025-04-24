@@ -238,7 +238,7 @@ def _prepare_area_ds(area_ds, single_var_da):
     template_ds = single_var_da.isel(
         time=0) if "time" in single_var_da.dims else single_var_da
 
-    if area_ds is True:
+    if isinstance(area_ds, bool) and area_ds is True:
         return create_area_ds_from_degrees_ds(template_ds)
     if area_ds in [False, None]:
         # set to pixel count
