@@ -35,7 +35,7 @@ pip install ctreeskit
 
 ### From GitHub
 ```bash
-pip install git+https://github.com/ctrees-products/ctreeskit.git@module_base_package
+pip install git+https://github.com/ctrees-products/ctreeskit.git
 ```
 
 ### Development Installation
