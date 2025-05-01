@@ -52,7 +52,6 @@ For development, you can install with all dependencies:
 # Clone the repository
 git clone https://github.com/ctrees-products/ctreeskit.git
 cd ctreeskit
-git checkout module_base_package
 
 # Create and activate virtual environment
 python -m venv venv
