@@ -9,6 +9,12 @@ pyproj>=3.6.1
 scipy>=1.7.3
 s3fs>=2025.3.0
 cf_xarray>=0.10.2
+odc-geo >=0.4.10
+dask-geopandas>=0.4.3
+exactextract >= 0.2.1
+rasterio>=1.4.3
+gdal>=3.10.2
+pyproj>=3.7.1
 
 # Optional dependencies
 dask>=2023.12.1
