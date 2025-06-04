@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def reproject_match_ds(
+def reproject_match_dask(
     template_raster: Union[xr.DataArray, xr.Dataset],
     target_raster: Union[xr.DataArray, xr.Dataset],
     resampling_method=Resampling.nearest,
@@ -78,3 +78,6 @@ def reproject_match_ds(
         )
     print("end create_area_ds_from_degrees_ds")
     return aligned_target, area_target
+
+
+__all__ = ["reproject_match_dask"]

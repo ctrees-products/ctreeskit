@@ -194,3 +194,8 @@ def create_area_ds_from_degrees_ds_dask(
             f"Error in create_area_ds_from_degrees_ds: {str(e)}", exc_info=True
         )
         raise
+
+
+__all__ = [
+    "create_area_ds_from_degrees_ds_dask",
+]

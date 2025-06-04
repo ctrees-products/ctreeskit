@@ -75,3 +75,9 @@ def calculate_categorical_area_stats_dask(
     logger.info(f"df columns: {df.columns}")
 
     return df
+
+
+__all__ = [
+    "_prepare_area_ds_dask",
+    "calculate_categorical_area_stats_dask",
+]

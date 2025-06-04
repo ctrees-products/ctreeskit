@@ -505,3 +505,6 @@ def geometry_clip_rio(
         ),
     )
     return obj.where(mask_da)
+
+
+__all__ = [geometry_clip_rio]
