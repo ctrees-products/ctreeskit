@@ -1,8 +1,8 @@
 import xarray as xr
 import dask.array as da
 from .dask_create_area_ds_from_degrees import create_area_ds_from_degrees_ds_dask
-from src.ctreeskit.xr_analyzer.xr_common import get_single_var_data_array
-from src.ctreeskit.xr_analyzer.xr_zonal_stats_module import (
+from ctreeskit.xr_analyzer.xr_common import get_single_var_data_array
+from ctreeskit.xr_analyzer.xr_zonal_stats_module import (
     _format_output,
     _process_single_var_with_area,
 )
