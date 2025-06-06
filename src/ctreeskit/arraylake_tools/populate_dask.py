@@ -1,3 +1,6 @@
+from ctreeskit import ArraylakeDatasetConfig
+from math import ceil
+
 """
 populate_dask.py
 
@@ -22,87 +25,65 @@ The key functions and classes are:
 """
 
 import pandas as pd
+from dask.distributed import LocalCluster, Client
+from dask import delayed, compute
 from concurrent.futures import ThreadPoolExecutor
 from icechunk.xarray import to_icechunk
 from icechunk.distributed import merge_sessions
 from arraylake import Client as arraylakeClient
 import rioxarray as rio
 import numpy as np
-from .common import ArraylakeDatasetConfig
+import dask
+import logging
+import psutil
+import dotenv
+dotenv.load_dotenv()
 
 
-def process_annual_dataset_fn(token: str, repo_name: str, has_time: bool, unit_type: type,
-                              year: int, var_name: str, group_name: str, file_uri: str):
+def process_chunk(session, has_time: bool, unit_type: type,
+                  var_name: str, group_name: str, ds, chunk: dict):
     """
-    Process one annual raster file and write it to the Arraylake repository.
-
-    Steps performed:
-      - Reinitializes the Arraylake API client and retrieves a writable session.
-      - Opens a raster file from a given URI using rioxarray.
-      - Casts the dataset to the specified data type.
-      - If a time dimension is enabled, expands the dataset to include an annual timestamp, 
-        using the date "year-01-01".
-      - Drops the 'spatial_ref' variable and removes problematic attributes (e.g., add_offset, scale_factor).
-      - Writes the processed dataset to the repository via icechunk.
-      - Returns the new writable session for later merging.
+    Process a chunk of the raster file and write it to the Arraylake repository.
 
     Parameters
     ----------
-    token : str
-        API token used to authenticate with the Arraylake service.
-    repo_name : str
-        Name of the repository to which the dataset will be written.
+    session : Session object
+        A writable session passed from populate_group.
     has_time : bool
         Flag indicating if the dataset has a time dimension.
     unit_type : type
         Numpy data type (either np.float32 or np.int16) for casting the raster data.
-    year : int
-        The year (from the annual file) used for timestamping if time dimension is enabled.
     var_name : str
         The variable name to assign to the dataset.
     group_name : str
         The group name in which this variable will be stored.
-    file_uri : str
-        S3 URI or local path to the raster file.
+    ds : xarray.Dataset
+        The opened dataset passed from populate_group.
+    chunk : dict
+        Dictionary specifying the chunk boundaries (e.g., {"x": slice(start_x, end_x), "y": slice(start_y, end_y)}).
 
     Returns
     -------
-    new_session : Session object
-        A writable session from the Arraylake repository that contains the written data.
+    None
     """
-    # Reinitialize client and repo in the worker
-    client = arraylakeClient(token=token)
-    repo = client.get_repo(repo_name)
-    new_session = repo.writable_session("main")
-
-    # Open the file and convert to xarray Dataset using rioxarray.
-    ds = rio.open_rasterio(
-        file_uri,
-        chunks=(1, 4000, 4000),
-        lock=False,
-        fill_value=-1,  # Set fill value during read
-        masked=True     # Ensure proper handling of NoData values
-    ).astype(unit_type).to_dataset(name=var_name)
-    ds = ds.squeeze("band", drop=True)
+    # Select the chunk region
+    ds_chunk = ds.isel(**chunk)
 
     # Define region selection for icechunk processing.
-    region = {"x": slice(None), "y": slice(None)}
-    if has_time:
-        ds = ds.expand_dims(time=[f"{year}-01-01"])
-        region = {"time": "auto", "x": slice(None), "y": slice(None)}
+    # region = {"x": slice(None), "y": slice(None)}
+    # if has_time:
+    #     region["time"] = "auto"
 
     # Remove unused variable and problematic attributes.
-    if 'spatial_ref' in ds:
-        ds = ds.drop_vars(['spatial_ref'])
+    if 'spatial_ref' in ds_chunk:
+        ds_chunk = ds_chunk.drop_vars(['spatial_ref'])
     for attr in ["add_offset", "scale_factor"]:
-        if attr in ds[var_name].attrs:
-            del ds[var_name].attrs[attr]
+        if attr in ds_chunk[var_name].attrs:
+            del ds_chunk[var_name].attrs[attr]
 
-    # Enable session pickling for later merging.
-    new_session.allow_pickling()
-    to_icechunk(ds.drop_encoding(), new_session,
-                group=group_name, region=region)
-    return new_session
+    # Write data to the session.
+    to_icechunk(ds_chunk.drop_encoding(), session,
+                group=group_name, region="auto")
 
 
 class ArraylakeRepoPopulator:
@@ -158,7 +139,7 @@ class ArraylakeRepoPopulator:
             Dataset name used to load the configuration from S3. Mutually exclusive with config_dict.
         config_dict : dict, optional
             A configuration dictionary provided directly. Mutually exclusive with dataset_name.
-        num_workers : int, optional
+        max_workers : int, optional
             Number of worker threads for concurrent processing. Default is 4.
 
         Raises
@@ -166,6 +147,41 @@ class ArraylakeRepoPopulator:
         ValueError
             If neither dataset_name nor config_dict is provided, or if both are provided.
         """
+        dask.config.set(
+            {
+                "distributed.worker.memory.target": float(
+                    os.getenv("DASK_WORKER_MEMORY_TARGET", 0.6)
+                ),
+                "distributed.worker.memory.spill": float(
+                    os.getenv("DASK_WORKER_MEMORY_SPILL", 0.7)
+                ),
+                "distributed.worker.memory.pause": float(
+                    os.getenv("DASK_WORKER_MEMORY_PAUSE", 0.8)
+                ),
+                "distributed.worker.memory.terminate": float(
+                    os.getenv("DASK_WORKER_MEMORY_TERMINATE", 0.95)
+                ),
+                "distributed.comm.compression": os.getenv("DASK_COMPRESSION", "auto"),
+                "distributed.scheduler.work-stealing": os.getenv(
+                    "DASK_WORK_STEALING", "true"
+                ),
+                "distributed.worker.memory.rebalance.measure": os.getenv(
+                    "DASK_REBALANCE_MEASURE", "managed_in_memory"
+                ),
+                "distributed.worker.memory.spill-to-disk": os.getenv(
+                    "DASK_SPILL_TO_DISK", "true"
+                ),
+                "distributed.worker.memory.target-fraction": float(
+                    os.getenv("DASK_WORKER_MEMORY_TARGET_FRACTION", 0.8)
+                ),
+                "distributed.worker.memory.monitor-interval": os.getenv(
+                    "DASK_WORKER_MEMORY_MONITOR_INTERVAL", "100ms"
+                ),
+                "array.slicing.split_large_chunks": os.getenv(
+                    "DASK_SPLIT_LARGE_CHUNKS", "true"
+                ),
+            }
+        )
         if dataset_name is None and config_dict is None:
             raise ValueError("Must provide either dataset_name or config_dict")
         if dataset_name is not None and config_dict is not None:
@@ -197,24 +213,32 @@ class ArraylakeRepoPopulator:
         self.dims = self.config.get('dim', ['x', 'y'])
         self.has_time = 'time' in self.dims
 
+        # Dynamically configure Dask cluster based on system resources
+        total_ram = psutil.virtual_memory().total  # Total RAM in bytes
+        cpu_cores = psutil.cpu_count(logical=True)  # Total logical CPU cores
+
+        workers = cpu_cores  # Use full CPU cores as workers
+        # 90% of total RAM divided by workers
+        memory_limit = round(0.9 * total_ram / workers)
+        # Convert to human-readable format
+        memory_limit_str = f"{memory_limit // (1024 ** 3)}GB"
+
+        # Initialize Dask LocalCluster and Client
+        self.cluster = LocalCluster(
+            n_workers=int(os.getenv("DASK_N_WORKERS")),
+            threads_per_worker=int(os.getenv("DASK_THREADS_PER_WORKER")),
+            memory_limit=os.getenv("DASK_MEMORY_LIMIT"),
+            silence_logs=logging.WARNING,
+            dashboard_address=f":{os.getenv('DASK_DASHBOARD_PORT')}",
+            protocol="tcp://",
+        )
+        self.dask_client = Client(self.cluster)
+        print(f"Dask dashboard available at: {self.cluster.dashboard_link}")
+        print(f"Workers: {workers}, Memory per worker: {memory_limit_str}")
+
     def populate_group(self, group_name: str, unit_type: str = None) -> None:
         """
-        Populate the specified configuration group with raster data.
-
-        For each variable (except 'time') defined in the group's configuration, this method determines
-        the appropriate file URI (constructed using S3 path prefixes/suffixes or a fixed S3 path), then submits
-        processing tasks concurrently via a ThreadPoolExecutor. The function waits for all tasks to finish,
-        merges the resulting repository sessions, and finally commits the changes.
-
-        Parameters
-        ----------
-        group_name : str
-            The name of the group to populate.
-
-        Raises
-        ------
-        ValueError
-            If the specified group is not found in the configuration.
+        Populate the specified configuration group with raster data, submitting tasks for each chunk.
         """
         if group_name not in self.config['groups']:
             raise ValueError(f"Group {group_name} not found in config.")
@@ -227,54 +251,71 @@ class ArraylakeRepoPopulator:
             freq = time_config.get("freq", "YS")
             years = pd.date_range(start_date, end_date,
                                   freq=freq).year.tolist()
-        futures = []
+        tasks = []
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Loop through each variable: if time is enabled, process for each year.
-            for var_name, var_config in group_config.items():
-                # Skip the 'time' configuration
-                if var_name == "time":
-                    continue
-                if unit_type:
-                    var_config['unit_type'] = unit_type
-                if time_config:
-                    s3_path_prefix = var_config.get("s3_path_prefix")
-                    s3_path_suffix = var_config.get("s3_path_suffix")
-                    for year in years:
-                        file_uri = f"{s3_path_prefix}{year}{s3_path_suffix}"
-                        print(
-                            f"Dispatching task for group '{group_name}', variable '{var_name}', year {year}: {file_uri}")
-                        future = executor.submit(
-                            process_annual_dataset_fn,
-                            self.token,
-                            self.repo_name,
+        for var_name, var_config in group_config.items():
+            if var_name == "time":
+                continue
+            if unit_type:
+                var_config['unit_type'] = unit_type
+            if time_config:
+                s3_path_prefix = var_config.get("s3_path_prefix")
+                s3_path_suffix = var_config.get("s3_path_suffix")
+                for year in years:
+                    file_uri = f"{s3_path_prefix}{year}{s3_path_suffix}"
+                    print(f"Processing file URI: {file_uri}")
+
+                    # Open the file once
+                    ds = rio.open_rasterio(file_uri)
+                    x_chunks = ceil(ds.sizes['x'] / 4000)
+                    y_chunks = ceil(ds.sizes['y'] / 4000)
+
+                    for x_chunk in range(x_chunks):
+                        for y_chunk in range(y_chunks):
+                            chunk = {
+                                "x": slice(x_chunk * 4000, (x_chunk + 1) * 4000),
+                                "y": slice(y_chunk * 4000, (y_chunk + 1) * 4000)
+                            }
+                            # Create a delayed task for each chunk
+                            task = delayed(process_chunk)(
+                                self.session,
+                                self.has_time,
+                                np.float32 if var_config['unit_type'] == 'float' else np.int16,
+                                var_name,
+                                group_name,
+                                ds,  # Pass the opened dataset
+                                chunk
+                            )
+                            tasks.append(task)
+            else:
+                s3_path = var_config.get("s3_path")
+                print(f"Processing file URI: {s3_path}")
+
+                # Open the file once
+                ds = rio.open_rasterio(s3_path)
+                x_chunks = ceil(ds.sizes['x'] / 4000)
+                y_chunks = ceil(ds.sizes['y'] / 4000)
+
+                for x_chunk in range(x_chunks):
+                    for y_chunk in range(y_chunks):
+                        chunk = {
+                            "x": slice(x_chunk * 4000, (x_chunk + 1) * 4000),
+                            "y": slice(y_chunk * 4000, (y_chunk + 1) * 4000)
+                        }
+                        # Create a delayed task for each chunk
+                        task = delayed(process_chunk)(
+                            self.session,
                             self.has_time,
                             np.float32 if var_config['unit_type'] == 'float' else np.int16,
-                            year,
                             var_name,
                             group_name,
-                            file_uri,
+                            ds,  # Pass the opened dataset
+                            chunk
                         )
-                        futures.append(future)
-                else:
-                    # If time is not enabled, use a single S3 path.
-                    s3_path = var_config.get("s3_path")
-                    future = executor.submit(
-                        process_annual_dataset_fn,
-                        self.token,
-                        self.repo_name,
-                        self.has_time,
-                        np.float32 if var_config['unit_type'] == 'float' else np.int16,
-                        0,  # Year is irrelevant without time dimension.
-                        var_name,
-                        group_name,
-                        s3_path,
-                    )
-                    futures.append(future)
-            # Wait for all tasks to complete.
-            results = [future.result() for future in futures]
+                        tasks.append(task)
 
-        # Merge all writable sessions returned by the processing tasks.
+        results = compute(*tasks)
+
         self.session = merge_sessions(self.session, *results)
         print(f"Populated group {group_name} with task results: {results}")
         self.session.commit(
