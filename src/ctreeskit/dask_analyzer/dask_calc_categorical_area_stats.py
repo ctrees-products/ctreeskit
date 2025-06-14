@@ -59,7 +59,7 @@ def calculate_categorical_area_stats_dask(
 
     logger.info("Getting single variable DataArray...")
     single_var_da = get_single_var_data_array(categorical_ds, var_name)
-    logger.info(f"Single variable DataArray: {single_var_da.attrs["flag_meanings"]}")
+    logger.info(f"Single variable DataArray: {single_var_da.attrs['flag_meanings']}")
 
     logger.info("Preparing area DataArray...")
     area_ds = _prepare_area_ds_dask(area_ds, single_var_da)
