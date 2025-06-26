@@ -11,6 +11,7 @@ import rasterio as rio
 from rasterio.features import MergeAlg, rasterize, geometry_mask
 from osgeo import gdal
 import ctreeskit
+import odc.geo.xr
 
 MIN_CHUNK_SIZE = 2  # exactextract cannot handle arrays of size 1.
 
