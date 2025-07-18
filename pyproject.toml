@@ -27,7 +27,7 @@ authors = [
 
 
 dependencies = [
-    "xarray>=2025.03.1",
+    "xarray>=2025.07.1",
     "rioxarray>=0.15.0",
     "numpy>=1.26.2",
     "pandas>=2.1.4",
@@ -37,9 +37,9 @@ dependencies = [
     "scipy>=1.7.3",
     "s3fs>=2025.3.0",
     "cf_xarray>=0.10.0",
-    "arraylake>=0.15.0",
+    "arraylake>=v0.21.0",
     "python-dotenv>=1.0.0",
-    "icechunk>=0.2.2",
+    "icechunk>=1.0.0",
 ]
 
 [project.optional-dependencies]
