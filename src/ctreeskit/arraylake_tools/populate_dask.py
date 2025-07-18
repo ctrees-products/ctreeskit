@@ -99,8 +99,8 @@ def process_annual_dataset_fn(token: str, repo_name: str, has_time: bool, unit_t
             del ds[var_name].attrs[attr]
 
     # Enable session pickling for later merging.
-    new_session.allow_pickling()
-    to_icechunk(ds.drop_encoding(), new_session,
+    forked_session = new_session.fork()
+    to_icechunk(ds.drop_encoding(), forked_session,
                 group=group_name, region=region)
     return new_session
 
