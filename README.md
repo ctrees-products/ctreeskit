@@ -6,11 +6,6 @@ Tutorials to come in May 2025 with additional functionality.
 ## Open Source Components (ctreeskit-core)
 Current:
 ```bash
-pip install git+https://github.com/ctrees-products/ctreeskit.git
-```
-
-(( Future -> To Be Implemented June 2025))
-```bash
 pip install ctreeskit
 ```
 
