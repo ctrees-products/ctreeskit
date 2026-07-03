@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ctreeskit"
-version = "0.1.2"
+version = "0.1.3"
 description = """
 CTrees toolkit for geospatial analysis and forest carbon monitoring.
 Core features include xarray-based analysis tools.
@@ -68,7 +68,7 @@ python_files = ["test_*.py"]
 pythonpath = ["src"]  # Add this to ensure tests can import package
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ctreeskit"]  
+packages = ["src/ctreeskit"]
 
-[tool.hatch.build]
-packages = ["ctreeskit"]
+[tool.hatch.build.targets.sdist]
+include = ["src/ctreeskit", "README.md", "LICENSE"]

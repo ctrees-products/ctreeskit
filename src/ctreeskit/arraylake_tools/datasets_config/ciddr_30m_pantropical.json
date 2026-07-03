@@ -1,0 +1,58 @@
+{
+    "dataset_name": "ciddr_30m_pantropical",
+    "long_name": "CID Deforestation and Degradation Raster (CIDDR) - annual, 30 m, pantropical",
+    "organization": "ctrees",
+    "repo": "ctrees/ciddr_30m_pantropical",
+    "crs": "EPSG:4326",
+    "dim": [
+        "x",
+        "y",
+        "time"
+    ],
+    "chunks": {
+        "time": 1,
+        "y": 2000,
+        "x": 2000
+    },
+    "groups": {
+        "pantropics": {
+            "time": {
+                "start": "2000-01-01",
+                "end": "2025-01-01",
+                "freq": "YS"
+            },
+            "ciddr_30m_pantropical": {
+                "s3_path_prefix": "s3://ctrees-development/activity/CID/v1/mosaics/pantropics/CIDDR_v1.0/vrts/pantropics_CIDDR_Annual_",
+                "s3_path_suffix": "_v1.0.vrt",
+                "is_mosaiced": true,
+                "unit_type": "int",
+                "dtype": "uint8",
+                "nodata": 255,
+                "classification_type": "deforestation_degradation",
+                "values": {
+                    "0": "Stable Non-forest",
+                    "1": "Stable Old-Growth Forest",
+                    "2": "Old-Growth Forest loss current",
+                    "3": "Old-Growth Forest loss past",
+                    "10": "Degraded Old-Growth Forest current",
+                    "11": "Degraded Old-Growth Forest past",
+                    "12": "Degraded Old-Growth Forest loss current",
+                    "13": "Degraded Old-Growth Forest loss past",
+                    "14": "Repeated Degraded Old-Growth Forest current",
+                    "20": "Regrowth Forest gain current",
+                    "21": "Regrowth Forest past",
+                    "22": "Regrowth Forest loss current",
+                    "23": "Regrowth Forest loss past",
+                    "30": "Degraded Regrowth current",
+                    "31": "Degraded Regrowth past",
+                    "32": "Degraded Regrowth loss current",
+                    "34": "Repeated Degraded Regrowth current",
+                    "40": "Forest Plantation current",
+                    "41": "Forest Plantation past",
+                    "253": "Water",
+                    "254": "Urban"
+                }
+            }
+        }
+    }
+}
