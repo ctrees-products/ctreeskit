@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 import s3fs
 import numpy as np
 import xarray as xr
+import pyproj
 
 
 class ArraylakeDatasetConfig:
@@ -225,7 +226,12 @@ class ArraylakeDatasetConfig:
             raise ValueError(f"Group {group_name} not found in config")
         return groups[group_name]
 
-    def add_cf_metadata(self, ds: xr.Dataset, config: Optional[Dict[str, Any]] = None) -> xr.Dataset:
+    def add_cf_metadata(
+        self,
+        ds: xr.Dataset,
+        config: Optional[Dict[str, Any]] = None,
+        crs: Optional[Any] = None,
+    ) -> xr.Dataset:
         """
         Add CF (Climate and Forecast) compliant metadata to an xarray Dataset.
 
@@ -235,6 +241,14 @@ class ArraylakeDatasetConfig:
             - Classification variables with a "values" mapping.
             - Variables with a defined "unit_name" and associated properties.
 
+        The x/y coordinate metadata is derived from the dataset's *actual* CRS rather
+        than hardcoded to longitude/latitude: geographic CRSs get longitude/latitude
+        (``degrees_east``/``degrees_north``), while projected CRSs get the CF
+        ``projection_x_coordinate``/``projection_y_coordinate`` standard names with the
+        CRS's own linear unit. This follows rioxarray's CF grid-mapping convention; when
+        a ``spatial_ref`` coordinate is present each data variable is linked to it via a
+        ``grid_mapping`` attribute.
+
         Parameters
         ----------
         ds : xr.Dataset
@@ -242,6 +256,11 @@ class ArraylakeDatasetConfig:
         config : Optional[Dict[str, Any]]
             An optional configuration dictionary. If provided, it will be used
             instead of the internally stored configuration (self._config).
+        crs : Optional[Any]
+            An optional CRS (anything ``pyproj.CRS.from_user_input`` accepts). Takes
+            precedence when resolving coordinate metadata. If omitted, the CRS is
+            inferred from the dataset's ``spatial_ref`` coordinate, then the config's
+            ``crs`` key, then WGS84.
         Returns
         -------
         xr.Dataset
@@ -250,25 +269,24 @@ class ArraylakeDatasetConfig:
         # Use the provided config if available; otherwise, use the internal config.
         cfg = config if config is not None else self._config
 
-        # Update coordinate variables with standard CF metadata.
-        ds.x.attrs.update({
-            "standard_name": "longitude",
-            "long_name": "longitude",
-            "units": "degrees_east"
-        })
-
-        ds.y.attrs.update({
-            "standard_name": "latitude",
-            "long_name": "latitude",
-            "units": "degrees_north"
-        })
+        # Resolve the CRS so coordinate metadata reflects the real projection instead
+        # of assuming lon/lat, then apply CRS-appropriate x/y attributes.
+        crs_obj = self._resolve_crs(ds, cfg, crs)
+        x_attrs, y_attrs = self._coordinate_cf_attrs(crs_obj)
+        if "x" in ds.coords:
+            ds.x.attrs.update(x_attrs)
+        if "y" in ds.coords:
+            ds.y.attrs.update(y_attrs)
 
         # Optionally update the time coordinate if present.
-        if 'time' in ds:
+        if 'time' in ds.coords:
             ds.time.attrs.update({
                 "standard_name": "time",
-                "long_name": "time"
+                "long_name": "time",
+                "axis": "T",
             })
+
+        has_grid_mapping = 'spatial_ref' in ds.coords
 
         # Process metadata for each data variable using the configuration groups.
         groups = cfg.get('groups', {})
@@ -280,35 +298,40 @@ class ArraylakeDatasetConfig:
                     var_config = group[var_name]
                     break
 
-            # If no configuration is found, skip this variable.
-            if not var_config:
-                continue
-
             attrs = {}
-            # For classification variables with a "values" mapping.
-            if 'values' in var_config:
-                flag_dict = var_config['values']
-                sorted_items = sorted(
-                    flag_dict.items(), key=lambda x: int(x[0]))
-                flag_values = np.array(
-                    [int(k) for k, _ in sorted_items], dtype=np.int16)
-                flag_meanings = ' '.join(v.replace(' ', '_')
-                                         for _, v in sorted_items)
-                classification_type = var_config.get(
-                    'classification_type', 'classification')
-                attrs.update({
-                    "standard_name": "classification",
-                    "long_name": classification_type,
-                    "flag_values": flag_values,
-                    "flag_meanings": flag_meanings,
-                    "units": "class",
-                    "classification_type": classification_type,
-                })
-            # For variables with a defined unit.
-            elif 'unit_name' in var_config:
-                attrs.update({
-                    "units": var_config['unit_name'],
-                })
+            # Link the variable to its grid mapping (rioxarray CF convention).
+            if has_grid_mapping:
+                attrs["grid_mapping"] = "spatial_ref"
+
+            if var_config:
+                # For classification variables with a "values" mapping.
+                if 'values' in var_config:
+                    flag_dict = var_config['values']
+                    sorted_items = sorted(
+                        flag_dict.items(), key=lambda x: int(x[0]))
+                    # Keep flag_values in the same dtype as the variable, as CF requires.
+                    var_dtype = ds[var_name].dtype
+                    flag_dtype = var_dtype if np.issubdtype(
+                        var_dtype, np.integer) else np.int16
+                    flag_values = np.array(
+                        [int(k) for k, _ in sorted_items], dtype=flag_dtype)
+                    flag_meanings = ' '.join(v.replace(' ', '_')
+                                             for _, v in sorted_items)
+                    classification_type = var_config.get(
+                        'classification_type', 'classification')
+                    attrs.update({
+                        "standard_name": "classification",
+                        "long_name": classification_type,
+                        "flag_values": flag_values,
+                        "flag_meanings": flag_meanings,
+                        "units": "class",
+                        "classification_type": classification_type,
+                    })
+                # For variables with a defined unit.
+                elif 'unit_name' in var_config:
+                    attrs.update({
+                        "units": var_config['unit_name'],
+                    })
 
             # Update the variable's attributes if any were determined.
             if attrs:
@@ -319,3 +342,56 @@ class ArraylakeDatasetConfig:
             "Conventions": "CF-1.8"
         })
         return ds
+
+    @staticmethod
+    def _resolve_crs(ds: xr.Dataset, cfg: Dict[str, Any], crs: Optional[Any]) -> "pyproj.CRS":
+        """
+        Determine the CRS to use for coordinate metadata.
+
+        Precedence: an explicit ``crs`` argument, then the dataset's rioxarray-style
+        ``spatial_ref`` coordinate (``crs_wkt``/``spatial_ref`` attribute), then the
+        config's ``crs`` key, then WGS84.
+        """
+        if crs is not None:
+            return pyproj.CRS.from_user_input(crs)
+        if 'spatial_ref' in getattr(ds, 'coords', {}):
+            sr_attrs = ds['spatial_ref'].attrs
+            wkt = sr_attrs.get('crs_wkt') or sr_attrs.get('spatial_ref')
+            if wkt:
+                try:
+                    return pyproj.CRS.from_user_input(wkt)
+                except Exception:
+                    pass
+        return pyproj.CRS.from_user_input(cfg.get('crs', 'EPSG:4326'))
+
+    @staticmethod
+    def _coordinate_cf_attrs(crs_obj: "pyproj.CRS") -> tuple:
+        """
+        Build CF-compliant attribute dicts for the x and y coordinates given a CRS.
+
+        Geographic CRSs map to longitude/latitude; projected CRSs map to CF
+        ``projection_x_coordinate``/``projection_y_coordinate`` with the CRS's own
+        linear unit (defaulting to metre).
+        """
+        if crs_obj.is_geographic:
+            x_attrs = {"standard_name": "longitude", "long_name": "longitude",
+                       "units": "degrees_east", "axis": "X"}
+            y_attrs = {"standard_name": "latitude", "long_name": "latitude",
+                       "units": "degrees_north", "axis": "Y"}
+            return x_attrs, y_attrs
+
+        unit = "metre"
+        try:
+            for axis in crs_obj.axis_info:
+                if axis.unit_name:
+                    unit = axis.unit_name
+                    break
+        except Exception:
+            pass
+        x_attrs = {"standard_name": "projection_x_coordinate",
+                   "long_name": "x coordinate of projection",
+                   "units": unit, "axis": "X"}
+        y_attrs = {"standard_name": "projection_y_coordinate",
+                   "long_name": "y coordinate of projection",
+                   "units": unit, "axis": "Y"}
+        return x_attrs, y_attrs
