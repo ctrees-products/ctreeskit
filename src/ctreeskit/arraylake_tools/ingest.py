@@ -52,12 +52,21 @@ _UNIT_TYPE_DTYPE = {"int": "int16", "float": "float32"}
 
 def load_config(name: str) -> Dict[str, Any]:
     """
-    Load a dataset config JSON bundled in ``ctreeskit/arraylake_tools/datasets_config``.
+    Load an *example* dataset-config schema bundled in
+    ``ctreeskit/arraylake_tools/datasets_config``.
+
+    Only placeholder/template schemas ship in this public package (e.g.
+    ``"categorical_raster_wtih_x_y_time"``). Real dataset configs reference internal
+    S3 paths and are kept out of this public repo -- they live in the private
+    ``ctrees-products/ctreeskit-internal`` repo. Load those from S3 with
+    :class:`~ctreeskit.arraylake_tools.common.ArraylakeDatasetConfig`, or pass the
+    parsed dict straight to :class:`AnnualRasterIngester`.
 
     Parameters
     ----------
     name : str
-        Config file stem, e.g. ``"ciddr_30m_pantropical"`` (with or without ``.json``).
+        Config file stem, e.g. ``"categorical_raster_wtih_x_y_time"`` (with or
+        without ``.json``).
 
     Returns
     -------
@@ -82,7 +91,8 @@ class AnnualRasterIngester:
     Parameters
     ----------
     config : Dict[str, Any]
-        Dataset configuration dictionary (see ``datasets_config/ciddr_30m_pantropical.json``).
+        Dataset configuration dictionary (e.g. ``ciddr_30m_pantropical.json`` in the
+        private ``ctrees-products/ctreeskit-internal`` repo).
     token : Optional[str]
         Arraylake API token. If omitted (and no ``client`` is passed), the client falls
         back to the cached credentials from ``arraylake auth login`` / the
