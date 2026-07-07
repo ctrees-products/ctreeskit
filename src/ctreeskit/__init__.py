@@ -28,17 +28,24 @@ from .arraylake_tools.initialize import ArraylakeRepoInitializer
 from .arraylake_tools.populate_dask import ArraylakeRepoPopulator
 from .arraylake_tools.ingest import AnnualRasterIngester
 
-from .dask_analyzer.dask_calc_categorical_area_stats import (
-    _prepare_area_ds_dask,
-    calculate_categorical_area_stats_dask,
-)
-from .dask_analyzer.dask_create_area_ds_from_degrees import (
-    create_area_ds_from_degrees_ds_dask,
-)
+# The dask_analyzer subpackage pulls in heavy, non-pip-friendly geospatial deps
+# (GDAL/osgeo, exactextract, odc-geo). Keep the core package importable without them:
+# expose these names only when the optional `zonal` extra is installed
+# (`pip install "ctreeskit[zonal]"`, which needs a system GDAL -- see pyproject.toml).
+try:
+    from .dask_analyzer.dask_calc_categorical_area_stats import (
+        _prepare_area_ds_dask,
+        calculate_categorical_area_stats_dask,
+    )
+    from .dask_analyzer.dask_create_area_ds_from_degrees import (
+        create_area_ds_from_degrees_ds_dask,
+    )
+    from .dask_analyzer.dask_reproj_match import reproject_match_dask
+    from .dask_analyzer.dask_geometry_clip_rio import geometry_clip_rio
 
-from .dask_analyzer.dask_reproj_match import reproject_match_dask
-
-from .dask_analyzer.dask_geometry_clip_rio import geometry_clip_rio
+    _HAS_DASK_ANALYZER = True
+except ImportError:
+    _HAS_DASK_ANALYZER = False
 
 
 __version__ = "0.1.3"
@@ -66,10 +73,14 @@ __all__ = [
     "ArraylakeRepoInitializer",
     "ArraylakeRepoPopulator",
     "AnnualRasterIngester",
-    ## from dask analyzer
-    "_prepare_area_ds_dask",
-    "create_area_ds_from_degrees_ds_dask",
-    "calculate_categorical_area_stats_dask",
-    "geometry_clip_rio",
-    "reproject_match_dask",
 ]
+
+# from dask analyzer -- only available with the optional `zonal` extra installed
+if _HAS_DASK_ANALYZER:
+    __all__ += [
+        "_prepare_area_ds_dask",
+        "create_area_ds_from_degrees_ds_dask",
+        "calculate_categorical_area_stats_dask",
+        "geometry_clip_rio",
+        "reproject_match_dask",
+    ]

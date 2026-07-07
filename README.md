@@ -47,36 +47,41 @@ pip install git+https://github.com/ctrees-products/ctreeskit.git
 ```
 
 ### Development Installation
-For development, you can install with all dependencies:
+The project is managed with [uv](https://docs.astral.sh/uv/). `uv sync` creates the
+virtual environment and installs the locked dependencies:
 ```bash
 # Clone the repository
 git clone https://github.com/ctrees-products/ctreeskit.git
 cd ctreeskit
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On macOS/Linux
+# Core + interactive extra + dev tooling (pip-only, no GDAL)
+uv sync --extra interactive --group dev
+```
 
-# Install in editable mode with all dependencies
-pip install -e ".[all]"
+The heavy zonal-stats-on-dask backend (`ctreeskit.dask_analyzer`) lives behind the
+optional `zonal` extra. Its pip deps install with `uv sync --extra zonal`, but the
+subpackage also needs the GDAL Python bindings (`osgeo`), which must come from
+conda-forge and match your system libgdal:
+```bash
+conda install -c conda-forge gdal   # provides osgeo matching system libgdal
+uv sync --extra zonal               # exactextract, odc-geo, distributed
 ```
 
 ## Dependencies
 
-- xarray
-- rioxarray (for spatial operations)
-- numpy
-- shapely
-- pyproj
-- s3fs (for Amazon S3 storage access)
-- python > 3.11
+- Python >= 3.12
+- xarray / rioxarray / rasterio (spatial operations)
+- numpy / pandas / scipy / shapely / pyproj
+- s3fs (Amazon S3 access)
+- arraylake, icechunk (>=2.0.6), zarr (>=3.1.0) for versioned Icechunk repos
+- dask (chunked array processing)
 
 ## Testing
 
-To run the tests for the ctreeskit package, navigate to the project directory and execute:
+The tests run under uv:
 
 ```bash
-pytest -m tests
+uv run pytest tests/
 ```
 
 ## Contributing

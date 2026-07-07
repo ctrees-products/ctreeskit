@@ -10,7 +10,7 @@ CTrees toolkit for geospatial analysis and forest carbon monitoring.
 Core features include xarray-based analysis tools.
 """
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "MIT"
 keywords = ["xarray", "geospatial", "zonal-statistics", "carbon", "biomass"]
 classifiers = [
@@ -19,6 +19,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: GIS",
 ]
 authors = [
@@ -26,9 +28,13 @@ authors = [
 ]
 
 
+# Core runtime deps -- kept lightweight and pip-installable (no GDAL). arraylake 1.x
+# requires icechunk>=2.0.6 + zarr>=3.1.0 + Python>=3.12, so those floors are pinned
+# together; loosening any one of them reintroduces the old-icechunk incompatibility.
 dependencies = [
-    "xarray>=2025.07.1",
+    "xarray>=2025.7.1",
     "rioxarray>=0.15.0",
+    "rasterio>=1.4.3",
     "numpy>=1.26.2",
     "pandas>=2.1.4",
     "geopandas>=0.14.1",
@@ -37,23 +43,39 @@ dependencies = [
     "scipy>=1.7.3",
     "s3fs>=2025.3.0",
     "cf_xarray>=0.10.0",
-    "arraylake>=v0.21.0",
+    "dask>=2025.5.1",
+    "arraylake>=1.1.1",
+    "icechunk>=2.0.6",
+    "zarr>=3.1.0",
     "python-dotenv>=1.0.0",
-    "icechunk>=1.0.0",
 ]
 
 [project.optional-dependencies]
+# Notebook / interactive visualisation.
 interactive = [
     "ipykernel>=6.27.1",
     "ipyleaflet>=0.17.4",
 ]
-parallel = [
-    "dask>=2023.12.1",
-    "distributed>=2023.12.1",
+# Heavy zonal-stats-on-dask backend (ctreeskit.dask_analyzer). These deps are
+# pip-installable, but the subpackage ALSO needs the GDAL Python bindings
+# (``osgeo``), which are NOT declared here: the pip ``gdal`` package must match the
+# system libgdal exactly and routinely fails to build. Provide GDAL from conda-forge
+# (`conda install -c conda-forge gdal`, matching your system libgdal) alongside this
+# extra.
+zonal = [
+    "exactextract>=0.3.0",
+    "odc-geo>=0.4.10",
+    "distributed>=2025.5.1",
 ]
 
-all = [
-    "ctreeskit[interactive,parallel]",
+# Dev tooling lives in a PEP 735 dependency group (installed with `uv sync --dev`,
+# never shipped in the wheel).
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.6.0",
+    "mypy>=1.5.1",
 ]
 
 [project.urls]
