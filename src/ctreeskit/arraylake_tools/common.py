@@ -319,12 +319,18 @@ class ArraylakeDatasetConfig:
                                              for _, v in sorted_items)
                     classification_type = var_config.get(
                         'classification_type', 'classification')
+                    # CF-1.8 flag variable (§3.5): flag_values + flag_meanings
+                    # make it self-describing. We intentionally omit `units`
+                    # (flags are categorical, not dimensional — CF's own flag
+                    # examples carry no units) and `standard_name` (there is no
+                    # CF standard name for a land-cover classification, and the
+                    # `status_flag` modifier form is for QC flags about another
+                    # variable, not for categorical data itself). `long_name`
+                    # satisfies CF's "at least one of standard_name/long_name".
                     attrs.update({
-                        "standard_name": "classification",
                         "long_name": classification_type,
                         "flag_values": flag_values,
                         "flag_meanings": flag_meanings,
-                        "units": "class",
                         "classification_type": classification_type,
                     })
                 # For variables with a defined unit.
