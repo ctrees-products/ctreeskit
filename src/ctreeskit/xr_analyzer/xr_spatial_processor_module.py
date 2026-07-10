@@ -98,10 +98,12 @@ def process_geometry(geom_source: GeometrySource,
                 geojson_dict = json.load(f)
         geometries = [shape(feature['geometry'])
                       for feature in geojson_dict.get('features', [])]
+        # RFC 7946 removed the 'crs' member: GeoJSON coordinates are WGS84 by
+        # definition. Still honor a legacy (GJ2008) 'crs' member if present.
         crs = geojson_dict.get('crs', {}).get(
             'properties', {}).get('name', None)
         if crs is None:
-            raise ValueError("Input geometry has no CRS information")
+            crs = "EPSG:4326"
     elif isinstance(geom_source, list) and all(hasattr(g, 'geom_type') for g in geom_source):
         geometries = geom_source
         crs = "EPSG:4326"  # default CRS

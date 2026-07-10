@@ -83,6 +83,20 @@ class TestGeometryProcessing(unittest.TestCase):
         self.assertAlmostEqual(result_ha.geom_area * 10000,
                                result_m2.geom_area, places=5)
 
+    def test_process_geometry_rfc7946_no_crs(self):
+        """RFC 7946 GeoJSON (no 'crs' member) defaults to EPSG:4326."""
+        geojson = {k: v for k, v in self.geojson_data.items() if k != "crs"}
+        rfc_file = tempfile.NamedTemporaryFile(
+            suffix='.geojson', delete=False)
+        with open(rfc_file.name, 'w') as f:
+            json.dump(geojson, f)
+        try:
+            result = process_geometry(rfc_file.name)
+            self.assertEqual(result.geom_crs, "EPSG:4326")
+            self.assertEqual(len(result.geom), 1)
+        finally:
+            os.unlink(rfc_file.name)
+
     def test_process_geometry_invalid_input(self):
         """Test error handling for invalid inputs."""
         with self.assertRaises(ValueError):
