@@ -194,31 +194,33 @@ class AnnualRasterIngester:
 
     def create_repo(self, exist_ok: bool = True) -> None:
         """
-        Create the Icechunk repo on Arraylake if it does not already exist.
+        Get or create the Icechunk repo on Arraylake.
+
+        Uses the client's ``get_or_create_repo`` rather than a manual existence probe
+        + ``create_repo`` -- it already handles the create-if-missing logic
+        atomically, so this method doesn't need to distinguish a "not found" error
+        from an "already exists" one itself.
 
         Parameters
         ----------
         exist_ok : bool
-            If True (default), silently return when the repo already exists.
+            If True (default), silently get-or-create. If False, raise when the repo
+            already exists instead.
         """
-        # Probe for existence separately from the exist_ok decision. Arraylake's
-        # get_repo raises ArraylakeClientError (which subclasses ValueError) with a 404
-        # when the repo is absent, so we must not conflate that "not found" with the
-        # "already exists" ValueError we raise ourselves -- treat any get_repo failure
-        # as "does not exist" and fall through to creation.
         try:
             self.client.get_repo(self.repo_name)
             exists = True
         except Exception:
             exists = False
-        if exists:
-            if not exist_ok:
-                raise ValueError(f"Repository already exists: {self.repo_name}")
-            print(f"Repository already exists: {self.repo_name}")
-            return
-        print(f"Creating repository: {self.repo_name} (bucket={self.bucket_nickname})")
-        # arraylake 1.x create_repo has no `kind` arg -- all repos are Icechunk now.
-        self.client.create_repo(
+
+        if exists and not exist_ok:
+            raise ValueError(f"Repository already exists: {self.repo_name}")
+
+        print(
+            f"Repository already exists: {self.repo_name}" if exists
+            else f"Creating repository: {self.repo_name} (bucket={self.bucket_nickname})"
+        )
+        self.client.get_or_create_repo(
             name=self.repo_name,
             bucket_config_nickname=self.bucket_nickname,
         )
