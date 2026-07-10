@@ -113,66 +113,66 @@ def create_combined_classification(primary_ds, secondary_ds, drop_zero=True):
 
 
 def calculate_stats_with_categories(categorical_da: xr.DataArray,
-                                    continuous_da: xr.DataArray):
+                                    continuous_da: xr.DataArray,
+                                    positive_only: bool = True):
     """
     Calculate statistics for continuous data masked by categories.
 
     Args:
         categorical_da (xr.DataArray): Categorical mask data
         continuous_da (xr.DataArray): Continuous value data
+        positive_only (bool): If True, only continuous values > 0 contribute
+            to the statistics. Set False when the variable can legitimately
+            be zero or negative (e.g. biomass change).
 
     Returns:
-        List[Dict]: Statistics for each category
+        pd.DataFrame: Statistics for each category (and time step, if present)
     """
-    # Get unique categories (excluding 0 and NaN)
     continuous_matched, _ = reproject_match_ds(
         categorical_da, continuous_da, return_area_grid=False)
-   # Initialize results dictionary
 
-    # Check if the categorical DataArray has a time dimension
+    rows = []
     if "time" in categorical_da.dims:
-        # Iterate over each time step
         for t in categorical_da.time:
-            # Select the data for the current time step
             categorical_t = categorical_da.sel(time=t)
-            continuous_t = continuous_matched.sel(time=t)
-            results = _calculate_cont_cat_stats(categorical_t, continuous_t)
-            results["time"].append(t.values)
+            continuous_t = (continuous_matched.sel(time=t)
+                            if "time" in continuous_matched.dims
+                            else continuous_matched)
+            rows.extend(_calculate_cont_cat_stats(
+                categorical_t, continuous_t, positive_only, time=t.values))
     else:
-        results = _calculate_cont_cat_stats(categorical_da, continuous_matched)
-    return pd.DataFrame(results)
+        rows = _calculate_cont_cat_stats(
+            categorical_da, continuous_matched, positive_only)
+    return pd.DataFrame(rows)
 
 
-def _calculate_cont_cat_stats(categorical_da, continuous_da):
-    categories = categorical_da.where(categorical_da > 0).unique().values
-    categories = categories[~np.isnan(categories)].astype(float)
-    results = {
-        "time": [],
-        "category": [],
-        "mean_value": [],
-        "std_value": []
-    }
-    # Calculate statistics for each category
+def _calculate_cont_cat_stats(categorical_da, continuous_da,
+                              positive_only=True, time=None):
+    """Per-category mean/std rows for one 2-D slice; category 0/NaN excluded."""
+    values = np.asarray(categorical_da.values, dtype=float).ravel()
+    values = values[~np.isnan(values)]
+    categories = np.unique(values[values > 0])
+
+    rows = []
     for category in categories:
-        # Create mask for the current category
         mask = categorical_da == category
+        if positive_only:
+            mask = mask & (continuous_da > 0)
+        masked_values = continuous_da.where(mask)
 
-        # Mask the continuous data for the current category
-        masked_values = continuous_da.where(
-            mask & (continuous_da > 0))
-
-        # Calculate mean and standard deviation, handling empty data
-        if masked_values.count() > 0:
+        if int(masked_values.count()) > 0:
             mean_value = float(masked_values.mean())
             std_value = float(masked_values.std())
         else:
             mean_value = None
             std_value = None
-            # Append results
-        results["category"].append(int(category))
-        results["mean_value"].append(mean_value)
-        results["std_value"].append(std_value)
-    return results
+        row = {"category": int(category),
+               "mean_value": mean_value,
+               "std_value": std_value}
+        if time is not None:
+            row = {"time": time, **row}
+        rows.append(row)
+    return rows
 
 
 def _format_output_reshaped_double(combined_df, primary_ds, secondary_ds, drop_zero=True):
@@ -240,7 +240,7 @@ def _prepare_area_ds(area_ds, single_var_da):
 
     if isinstance(area_ds, bool) and area_ds is True:
         return create_area_ds_from_degrees_ds(template_ds)
-    if area_ds in [False, None]:
+    if area_ds is None or area_ds is False:
         # set to pixel count
         area_ds = 1.0
     if isinstance(area_ds, (int, float)):
