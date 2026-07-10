@@ -415,6 +415,24 @@ class AnnualRasterIngester:
 
     @staticmethod
     def _index_slice(stored_coord: np.ndarray, subset_coord: np.ndarray) -> slice:
-        """Integer slice locating ``subset_coord`` within ``stored_coord`` (nearest start)."""
+        """Integer slice locating ``subset_coord`` within ``stored_coord``.
+
+        Raises ValueError if the subset is not aligned with the stored grid,
+        so an off-grid bbox fails loudly instead of writing pixels shifted by
+        up to half a cell.
+        """
         start = int(np.abs(stored_coord - subset_coord[0]).argmin())
-        return slice(start, start + len(subset_coord))
+        stop = start + len(subset_coord)
+        window = stored_coord[start:stop]
+        cell = (float(np.abs(stored_coord[1] - stored_coord[0]))
+                if stored_coord.size > 1 else float("inf"))
+        tol = cell * 0.01
+        if window.size != subset_coord.size or not np.allclose(
+                window, subset_coord, rtol=0, atol=tol):
+            raise ValueError(
+                "bbox subset does not align with the stored grid "
+                f"(first coord {subset_coord[0]!r} vs nearest stored "
+                f"{stored_coord[start]!r}, tolerance {tol!r}). Snap the bbox "
+                "to the stored grid (same resolution and origin) before a "
+                "region write.")
+        return slice(start, stop)
