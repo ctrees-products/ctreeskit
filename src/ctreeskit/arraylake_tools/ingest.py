@@ -3,9 +3,8 @@ ingest.py
 
 Annual GeoTIFF/VRT -> Icechunk ingestion connector.
 
-Reads finished per-year raster mosaics (e.g. the CIDDR annual pantropical VRTs that
-Ricardo's R pipeline writes to S3) and writes them into an Arraylake/Icechunk repo with
-an ``(time, y, x)`` layout, following the CTrees geo-platform design proposal (§4):
+Reads finished per-year raster mosaics (GeoTIFF or VRT) and writes them into an
+Arraylake/Icechunk repo with an ``(time, y, x)`` layout:
 
 - Preserve the source's native CRS, dtype and nodata value -- do not upcast or relabel.
 - Standardize on rioxarray's CF grid-mapping convention (a ``spatial_ref`` coordinate
@@ -23,8 +22,7 @@ The connector separates two phases:
    the dataset.
 
 The GeoTIFF/VRT read + Icechunk write mechanics live here (in ``ctreeskit``) so thin
-service wrappers -- e.g. an ECS task in ``web-backend-science`` -- only need to load a
-config and call these methods.
+service wrappers only need to load a config and call these methods.
 """
 
 # Standard library imports
@@ -102,6 +100,10 @@ class AnnualRasterIngester:
     client : Optional[arraylake.Client]
         An already-constructed Arraylake client to reuse (e.g. the one a service-function
         runner built from ``ARRAYLAKE_TOKEN``). Takes precedence over ``token``.
+    branch_name : str
+        Icechunk branch that ``initialize_schema``/``ingest_year`` read and write
+        (default ``"main"``). Point this at a disposable test branch to exercise the
+        connector without touching the production branch.
     """
 
     def __init__(
@@ -110,8 +112,10 @@ class AnnualRasterIngester:
         token: Optional[str] = None,
         bucket_nickname: str = "arraylake-datasets",
         client: Optional[Any] = None,
+        branch_name: str = "main",
     ):
         self._configure(config, bucket_nickname)
+        self.branch_name = branch_name
         # Arraylake connectivity: reuse an injected client, else token, else cached creds.
         self.token = token
         if client is not None:
@@ -192,38 +196,13 @@ class AnnualRasterIngester:
 
     # ------------------------------------------------------------------ creation
 
-    def create_repo(self, exist_ok: bool = True) -> None:
-        """
-        Get or create the Icechunk repo on Arraylake.
-
-        Uses the client's ``get_or_create_repo`` rather than a manual existence probe
-        + ``create_repo`` -- it already handles the create-if-missing logic
-        atomically, so this method doesn't need to distinguish a "not found" error
-        from an "already exists" one itself.
-
-        Parameters
-        ----------
-        exist_ok : bool
-            If True (default), silently get-or-create. If False, raise when the repo
-            already exists instead.
-        """
-        try:
-            self.client.get_repo(self.repo_name)
-            exists = True
-        except Exception:
-            exists = False
-
-        if exists and not exist_ok:
-            raise ValueError(f"Repository already exists: {self.repo_name}")
-
-        print(
-            f"Repository already exists: {self.repo_name}" if exists
-            else f"Creating repository: {self.repo_name} (bucket={self.bucket_nickname})"
-        )
+    def create_repo(self) -> None:
+        """Get or create the Icechunk repo on Arraylake."""
         self.client.get_or_create_repo(
             name=self.repo_name,
             bucket_config_nickname=self.bucket_nickname,
         )
+        print(f"repo ready: {self.repo_name} (bucket={self.bucket_nickname})")
 
     # ------------------------------------------------------------------ schema
 
@@ -241,7 +220,8 @@ class AnnualRasterIngester:
         template_year : Optional[int]
             Year whose mosaic defines the spatial grid. Defaults to the first configured year.
         overwrite : bool
-            If True, use ``mode="w"`` (replace an existing array); otherwise ``mode="w-"``.
+            If True, use ``mode="w"`` (replace an existing array); otherwise ``mode="w-"``
+            (fail if it already exists).
 
         Returns
         -------
@@ -292,7 +272,7 @@ class AnnualRasterIngester:
             }
         }
 
-        session = self._repo().writable_session("main")
+        session = self._repo().writable_session(self.branch_name)
         ds.drop_encoding().to_zarr(
             session.store,
             group=self.group_name,
@@ -370,13 +350,14 @@ class AnnualRasterIngester:
 
         # Decide region-write vs append based on the stored time axis.
         stored = xr.open_zarr(
-            repo.readonly_session("main").store, group=self.group_name,
+            repo.readonly_session(self.branch_name).store, group=self.group_name,
             consolidated=False, chunks=None,
         )
         stored_years = pd.to_datetime(stored.time.values).year.tolist()
         target = pd.Timestamp(f"{year}-01-01")
 
-        session = repo.writable_session("main")
+        session = repo.writable_session(self.branch_name)
+        action = None
         if year in stored_years:
             t_idx = stored_years.index(year)
             region = {"time": slice(t_idx, t_idx + 1)}
