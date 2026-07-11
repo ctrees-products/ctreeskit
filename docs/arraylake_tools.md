@@ -1,6 +1,6 @@
 # Arraylake Tools
 
-The `arraylake_tools` package provides a set of utilities for interacting with Arraylake repositories. It includes functionality for creating repositories from configurations, initializing repositories (setting schema) and populating repositories with raster data using Dask for asynchronous processing.
+The `arraylake_tools` package provides a set of utilities for interacting with Arraylake repositories. It includes functionality for creating repositories from configurations, initializing repositories (setting schema), populating repositories with raster data using Dask for asynchronous processing, and ingesting annual raster mosaics into a versioned `(time, y, x)` layout.
 
 ## Table of Contents
 
@@ -8,11 +8,13 @@ The `arraylake_tools` package provides a set of utilities for interacting with A
     - [Creating Repositories](#creating-repositories)
     - [Initialization](#initialization)
     - [Populating Repositories](#populating-repositories)
+    - [Annual Raster Ingestion](#annual-raster-ingestion)
 - [Modules](#modules)
     - [common.py](#commonpy)
     - [create.py](#createpy)
     - [initialize.py](#initializepy)
     - [populate_dask.py](#populate_daskpy)
+    - [ingest.py](#ingestpy)
 
 ## Usage
 ### Creating Repositories
@@ -51,6 +53,39 @@ populator = ArraylakeRepoPopulator(token="your_api_token", dataset_name="your_da
 populator.populate_all_groups()
 ```
 
+### Annual Raster Ingestion
+
+The `AnnualRasterIngester` class ingests annual GeoTIFF/VRT mosaics into an
+Arraylake/Icechunk repo with a `(time, y, x)` layout. It separates schema
+allocation from data population: `initialize_schema` allocates the full time axis
+once as an empty, lazy template (no data chunks written); `ingest_year` then fills
+one year at a time, either as a region write into its pre-allocated slot or an
+append when the year extends the time axis.
+
+```python
+from ctreeskit.arraylake_tools.ingest import AnnualRasterIngester, load_config
+
+config = load_config("your_config_name")  # or your own config dict
+ingester = AnnualRasterIngester(config, token="your_arraylake_api_token")
+
+ingester.create_repo()
+ingester.initialize_schema()
+ingester.ingest_year(2020)
+ingester.ingest_year(2021, tag="2021-release")
+```
+
+Pass `branch_name` (default `"main"`) to point every operation -- schema
+initialization and per-year ingestion -- at a specific Icechunk branch, e.g. a
+disposable test branch instead of production:
+
+```python
+ingester = AnnualRasterIngester(config, token="your_arraylake_api_token", branch_name="test-ingest")
+```
+
+`ingest_year` also accepts a `bbox=(minx, miny, maxx, maxy)` window (in the dataset
+CRS) to ingest a spatial subset for fast verification, without ingesting the full
+extent.
+
 ## Modules
 ### common.py
 
@@ -69,3 +104,7 @@ This module contains the `ArraylakeRepoInitializer` class, which initializes an 
 ### populate_dask.py
 
 This module provides functionality to process and populate annual raster datasets into an Arraylake repository. It leverages Dask for asynchronous processing and icechunk for writing data in a distributed manner. The `ArraylakeRepoPopulator` class loads a dataset configuration, initializes an Arraylake repository session, and populates each group concurrently.
+
+### ingest.py
+
+This module contains the `AnnualRasterIngester` class and `load_config` helper. `AnnualRasterIngester` reads finished per-year GeoTIFF/VRT mosaics from S3 and writes them into an Arraylake/Icechunk repo with a `(time, y, x)` layout: `initialize_schema` allocates the full time axis once as an empty, lazy template (coordinates + metadata only, no data chunks); `ingest_year` fills one year at a time via a region write into its pre-allocated slot, or an `append_dim="time"` append for a year beyond the current axis. `load_config` loads an example dataset-config template bundled with this package.

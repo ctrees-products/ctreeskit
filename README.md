@@ -1,17 +1,12 @@
 # CTrees Tools - Beta Version
 CTreesKit is a public package used split into two sections, "arraylake_tools" which allows a simplified way of converting from geotiffs -> zarr format and saving the data into [arraylake (by Earthmover)](https://docs.earthmover.io/concepts/overview). "xr_analyzer" is a small wrapper for xarray functions used for zonal stats that use the arraylake datasource as the input. These can also be used with Earthmover's opensource [icechunk format](https://icechunk.io/en/latest/overview/) as well! 
-Tutorials to come in May 2025 with additional functionality. 
 [Slide Deck for CNG Conference about this pip package](https://drive.google.com/file/d/10UO7PcYldF-FdihrmBiYmjsGXC1EHRHm/view?usp=sharing) 
 
 ## Open Source Components (ctreeskit-core)
-Current:
-```bash
-pip install git+https://github.com/ctrees-products/ctreeskit.git
-```
-
-(( Future -> To Be Implemented June 2025))
 ```bash
 pip install ctreeskit
+# or, for the latest unreleased changes:
+pip install git+https://github.com/ctrees-products/ctreeskit.git
 ```
 
 ## Quick Links
@@ -125,7 +120,7 @@ This module provides tools to:
 
 This module provides tools to:
 
-- Calculate area statistics for different classes in categorical rasters
-- Support both time-series and static (non-temporal) raster data
-- Offer flexible area calculation options (pixel counts, constant values, or spatially-variable areas)
-- Generate tabular summaries as pandas DataFrames
+- Create and initialize Arraylake/Icechunk repositories from a dataset configuration
+- Allocate a lazy `(time, y, x)` schema template, then populate it with annual raster data
+- Ingest annual GeoTIFF/VRT mosaics from S3 with Dask-backed, chunked writes
+- Region-write or append each year onto a versioned Icechunk time axis
