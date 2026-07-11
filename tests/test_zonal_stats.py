@@ -12,9 +12,14 @@ from ctreeskit.xr_analyzer.xr_zonal_stats_module import (
 
 
 def _time_class_raster():
-    """Two-date 4x4 raster: rows 0-1 are class 1, rows 2-3 are class 2."""
-    y = np.arange(4.0)
-    x = np.arange(4.0)
+    """Two-date 4x4 raster: rows 0-1 are class 1, rows 2-3 are class 2.
+
+    Uses real WGS 84 coordinates over a patch of pantropical forest near the
+    Amazon basin, with descending latitude (north-up), to exercise real
+    coordinate handling.
+    """
+    y = np.array([10.00, 9.99, 9.98, 9.97])  # latitude, descending (north-up)
+    x = np.array([-60.00, -59.99, -59.98, -59.97])  # longitude, ascending
     data = np.zeros((2, 4, 4))
     data[:, :2, :] = 1
     data[:, 2:, :] = 2
@@ -58,8 +63,9 @@ class TestStatsWithCategories(unittest.TestCase):
     for both time and non-time inputs (issue #11)."""
 
     def setUp(self):
-        y = np.arange(2.0)
-        x = np.arange(2.0)
+        # Real WGS 84 coordinates: descending latitude, ascending longitude.
+        y = np.array([10.00, 9.99])
+        x = np.array([-60.00, -59.99])
         self.coords = {"y": y, "x": x}
         self.categorical = xr.DataArray(
             [[1, 1], [2, 2]], dims=["y", "x"], coords=self.coords,
