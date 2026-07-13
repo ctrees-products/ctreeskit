@@ -2,14 +2,12 @@ import os
 import tempfile
 import json
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import numpy as np
 import xarray as xr
 import pandas as pd
-from shapely.geometry import Polygon, MultiPolygon, box
-from rasterio.transform import Affine
-import pyproj
+from shapely.geometry import Polygon, box
 
 from ctreeskit import (
     GeometryData,
@@ -158,7 +156,7 @@ class TestRasterOperations(unittest.TestCase):
 
         # Mock the rio.clip method
         with patch.object(self.test_raster.rio, 'clip', return_value=self.test_raster) as mock_clip:
-            result = clip_ds_to_geom(self.test_raster, self.geom)
+            clip_ds_to_geom(self.test_raster, self.geom)
             mock_clip_bbox.assert_called_once()
             mock_clip.assert_called_once()
 
@@ -177,27 +175,6 @@ class TestRasterOperations(unittest.TestCase):
         result_m2 = create_area_ds_from_degrees_ds(
             self.test_raster, output_in_ha=False)
         self.assertEqual(result_m2.attrs['units'], 'm²')
-
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_geom')
-    def test_create_proportion_geom_mask(self, mock_clip):
-        """Test creating proportion mask."""
-        # Configure mock
-        mock_clipped = xr.DataArray(
-            data=np.ones((5, 5)),
-            dims=["y", "x"],
-            coords={"y": np.linspace(-2, 2, 5), "x": np.linspace(-2, 2, 5)}
-        )
-        mock_clipped.rio.write_crs("EPSG:4326", inplace=True)
-        mock_clip.return_value = mock_clipped
-
-        # Set up transform for the test
-        transform = Affine(1.0, 0.0, -2.0, 0.0, 1.0, -2.0)
-        with patch.object(mock_clipped.rio, 'transform', return_value=transform):
-            # Test with default parameters
-            with patch('numpy.nonzero', return_value=(np.array([0, 1, 2]), np.array([0, 1, 2]))):
-                result = create_proportion_geom_mask(
-                    mock_clipped, self.geom, overwrite=True)
-                self.assertEqual(result.attrs['units'], 'proportion')
 
     @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
     @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.create_area_ds_from_degrees_ds')
@@ -220,6 +197,61 @@ class TestRasterOperations(unittest.TestCase):
             result, area = reproject_match_ds(
                 self.test_raster, self.test_raster, return_area_grid=False)
             self.assertIsNone(area)
+
+
+class TestCreateProportionGeomMask(unittest.TestCase):
+    """Proportion masks with known expected values (issue #13).
+
+    The raster covers 10x10 pixels of 0.01 degrees near 10N, -60E (north-up,
+    descending latitude), with pixel edges on multiples of 0.01 degrees. Data
+    values are all zero: the mask must be driven by the geometry alone.
+    """
+
+    def setUp(self):
+        x = np.linspace(-59.995, -59.905, 10)
+        y = np.linspace(9.995, 9.905, 10)
+        self.raster = xr.DataArray(
+            np.zeros((10, 10)), dims=["y", "x"], coords={"y": y, "x": x})
+        self.raster.rio.write_crs("EPSG:4326", inplace=True)
+        # aligned exactly to pixel edges: covers a 3x3 pixel block fully
+        self.aligned_geom = box(-59.97, 9.94, -59.94, 9.97)
+        # offset half a pixel in both axes: overlaps a 5x5 block with
+        # 0.25 corners, 0.5 edges, and a full interior
+        self.offset_geom = box(-59.975, 9.935, -59.935, 9.975)
+
+    def test_weighted_proportions_half_cell_offset(self):
+        mask = create_proportion_geom_mask(
+            self.raster, self.offset_geom, overwrite=True)
+        self.assertEqual(mask.shape, (5, 5))
+        # total proportion equals geometry area / pixel area
+        self.assertAlmostEqual(float(mask.sum()), 16.0, places=4)
+        interior = mask.sel(y=9.955, x=-59.955, method="nearest")
+        corner = mask.sel(y=9.975, x=-59.975, method="nearest")
+        edge = mask.sel(y=9.975, x=-59.955, method="nearest")
+        self.assertAlmostEqual(float(interior), 1.0, places=4)
+        self.assertAlmostEqual(float(corner), 0.25, places=4)
+        self.assertAlmostEqual(float(edge), 0.5, places=4)
+
+    def test_weighted_proportions_edge_aligned(self):
+        mask = create_proportion_geom_mask(
+            self.raster, self.aligned_geom, overwrite=True)
+        self.assertEqual(mask.shape, (3, 3))
+        np.testing.assert_allclose(mask.values, 1.0, atol=1e-4)
+
+    def test_below_threshold_returns_binary_mask(self):
+        # pixel/geometry area ratio is ~0.111 here, so 0.2 forces the
+        # binary path
+        with self.assertWarns(UserWarning):
+            mask = create_proportion_geom_mask(
+                self.raster, self.aligned_geom, pixel_ratio=0.2)
+        self.assertTrue(set(np.unique(mask.values)) <= {0, 1})
+        self.assertEqual(float(mask.sum()), 9.0)
+
+    def test_mask_ignores_data_values(self):
+        # all-zero data must still yield full proportions inside the geometry
+        mask = create_proportion_geom_mask(
+            self.raster, self.aligned_geom, overwrite=True)
+        self.assertAlmostEqual(float(mask.max()), 1.0, places=4)
 
 
 if __name__ == '__main__':
