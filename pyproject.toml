@@ -57,16 +57,15 @@ interactive = [
     "ipykernel>=6.27.1",
     "ipyleaflet>=0.17.4",
 ]
-# Heavy zonal-stats-on-dask backend (ctreeskit.dask_analyzer). These deps are
-# pip-installable, but the subpackage ALSO needs the GDAL Python bindings
-# (``osgeo``), which are NOT declared here: the pip ``gdal`` package must match the
-# system libgdal exactly and routinely fails to build. Provide GDAL from conda-forge
-# (`conda install -c conda-forge gdal`, matching your system libgdal) alongside this
-# extra.
+# Coverage-fraction rasterization for geometry-weighted zonal stats, via
+# rasterix (dask-aware wrappers around exactextract). Fully pip-installable.
+# ``sparse`` (required by rasterix's exactextract backend) depends on numba,
+# which does not support Python 3.14 yet -- on 3.14 the extra installs but the
+# coverage backend is unavailable.
 zonal = [
+    "rasterix>=0.2.2",
     "exactextract>=0.3.0",
-    "odc-geo>=0.4.10",
-    "distributed>=2025.5.1",
+    "sparse>=0.15; python_version < '3.14'",
 ]
 
 # Dev tooling lives in a PEP 735 dependency group (installed with `uv sync --dev`,
@@ -81,9 +80,6 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-# dask_analyzer is scheduled to be replaced by the rasterix dependency
-# (https://github.com/ctrees-products/ctreeskit/issues/15).
-extend-exclude = ["src/ctreeskit/dask_analyzer"]
 
 [project.urls]
 Homepage = "https://github.com/ctrees-products/ctreeskit"

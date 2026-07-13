@@ -20,10 +20,8 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
-      # Core + interactive + dev only. The `zonal` extra is intentionally excluded:
-      # it needs a system GDAL that isn't pip-installable on the runner.
       - name: Install the project
-        run: uv sync --locked --extra interactive --group dev
+        run: uv sync --locked --extra interactive --extra zonal --group dev
 
       - name: Lint
         run: uv run ruff check .

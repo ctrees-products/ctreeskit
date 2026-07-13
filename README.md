@@ -53,14 +53,15 @@ cd ctreeskit
 uv sync --extra interactive --group dev
 ```
 
-The heavy zonal-stats-on-dask backend (`ctreeskit.dask_analyzer`) lives behind the
-optional `zonal` extra. Its pip deps install with `uv sync --extra zonal`, but the
-subpackage also needs the GDAL Python bindings (`osgeo`), which must come from
-conda-forge and match your system libgdal:
+Coverage-fraction rasterization (geometry-weighted zonal stats, via
+[rasterix](https://rasterix.readthedocs.io/) + exactextract) lives behind the
+optional `zonal` extra — fully pip-installable, no GDAL required:
 ```bash
-conda install -c conda-forge gdal   # provides osgeo matching system libgdal
-uv sync --extra zonal               # exactextract, odc-geo, distributed
+uv sync --extra zonal               # rasterix, exactextract, sparse
 ```
+See the coverage-fraction example in [docs/xr_analyzer.md](./docs/xr_analyzer.md).
+Note: the exactextract backend needs `sparse` (numba), which does not support
+Python 3.14 yet; use Python 3.12/3.13 for the `zonal` extra.
 
 ## Dependencies
 

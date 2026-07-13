@@ -38,6 +38,14 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 - CI runs `ruff check` and triggers on pull requests as well as pushes.
 
 ### Removed
+- The `dask_analyzer` subpackage (`calculate_categorical_area_stats_dask`,
+  `create_area_ds_from_degrees_ds_dask`, `reproject_match_dask`, `geometry_clip_rio`).
+  The core zonal-stats functions are now dask-compatible themselves (flox-backed
+  groupby), and coverage-fraction rasterization comes from the released
+  [rasterix](https://pypi.org/project/rasterix/) package, which the `zonal` extra now
+  installs — fully pip-installable, no GDAL required (see the coverage-fraction
+  example in `docs/xr_analyzer.md`). **Breaking** for consumers importing the
+  `_dask` variants.
 - The legacy `arraylake_tools` classes `ArraylakeRepoCreator`, `ArraylakeRepoInitializer`,
   and `ArraylakeRepoPopulator`. They were incompatible with the icechunk 2.x /
   arraylake 1.x APIs this package now requires; `AnnualRasterIngester` covers the
