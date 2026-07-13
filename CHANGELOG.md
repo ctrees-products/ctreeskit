@@ -37,6 +37,13 @@ Versions prior to 0.2.0 were not tracked in this changelog.
   decimal-fraction codes.
 - CI runs `ruff check` and triggers on pull requests as well as pushes.
 
+### Removed
+- The legacy `arraylake_tools` classes `ArraylakeRepoCreator`, `ArraylakeRepoInitializer`,
+  and `ArraylakeRepoPopulator`. They were incompatible with the icechunk 2.x /
+  arraylake 1.x APIs this package now requires; `AnnualRasterIngester` covers the
+  create/initialize/populate workflow with current Icechunk semantics. **Breaking**
+  for consumers importing these classes.
+
 ### Fixed
 - Zonal-stats functions no longer crash on documented input shapes (e.g. `area_ds`
   passed as a `DataArray`).
