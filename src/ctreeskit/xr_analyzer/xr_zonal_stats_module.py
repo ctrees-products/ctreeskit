@@ -45,6 +45,11 @@ def calculate_categorical_area_stats(
         If False, returns a tidy long-format DataFrame.
     drop_zero : bool, default True
         If True, removes class 0 (typically no-data) from results
+    single_class : bool, default True
+        If True, formats the wide output for a single classification:
+        class columns renamed via flag metadata plus a "total_area" column.
+        Set False for combined-classification codes, which are decoded and
+        renamed by the combined-stats wrapper instead.
 
     Returns
     -------

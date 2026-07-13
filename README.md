@@ -4,8 +4,6 @@ CTreesKit is a public package used split into two sections, "arraylake_tools" wh
 
 ## Open Source Components (ctreeskit-core)
 ```bash
-pip install ctreeskit
-# or, for the latest unreleased changes:
 pip install git+https://github.com/ctrees-products/ctreeskit.git
 ```
 
@@ -16,7 +14,6 @@ pip install git+https://github.com/ctrees-products/ctreeskit.git
 
 ## Table of Contents
 1. [Installation](#installation)
-   - [PyPI Installation](#from-pypi)
    - [GitHub Installation](#from-github)
    - [Development Setup](#development-installation)
    - [Testing](#testing)
@@ -28,13 +25,6 @@ pip install git+https://github.com/ctrees-products/ctreeskit.git
     - [Arraylake Tools Overview](#arraylaketools)
 
 ## Installation
-
-You can install ctreeskit either from PyPI or directly from GitHub:
-
-### From PyPI
-```bash
-pip install ctreeskit
-```
 
 ### From GitHub
 ```bash

@@ -1,3 +1,5 @@
+from importlib.metadata import PackageNotFoundError, version
+
 # Import and expose key functions from the modules
 from .xr_analyzer.xr_spatial_processor_module import (
     process_geometry,
@@ -25,7 +27,11 @@ from .xr_analyzer.xr_zonal_stats_module import (
 from .arraylake_tools.common import ArraylakeDatasetConfig
 from .arraylake_tools.ingest import AnnualRasterIngester
 
-__version__ = "0.2.0"
+# Single-sourced from pyproject.toml's [project].version via package metadata.
+try:
+    __version__ = version("ctreeskit")
+except PackageNotFoundError:  # running from a checkout without installation
+    __version__ = "0.0.0+unknown"
 __all__ = [
     # From spatial processor
     "process_geometry",

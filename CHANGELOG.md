@@ -36,6 +36,15 @@ Versions prior to 0.2.0 were not tracked in this changelog.
   `combined_modulus` attribute). **Breaking** for consumers decoding the previous
   decimal-fraction codes.
 - CI runs `ruff check` and triggers on pull requests as well as pushes.
+- Bundled config template filenames are spelled correctly:
+  `categorical_raster_with_x_y[_time].json` and
+  `continuous_raster_with_x_y[_time].json`. **Breaking** for callers passing the old
+  misspelled stems (`wtih`, `conitnous`, `continous`) to `load_config`.
+- `__version__` is single-sourced from the package metadata
+  (`importlib.metadata.version`); the per-subpackage version strings are gone.
+- `AnnualRasterIngester` reports progress through a module logger
+  (`logging.getLogger("ctreeskit.arraylake_tools.ingest")`) instead of `print`, and
+  config-loading errors chain the original exception (`raise ... from e`).
 
 ### Removed
 - The `dask_analyzer` subpackage (`calculate_categorical_area_stats_dask`,

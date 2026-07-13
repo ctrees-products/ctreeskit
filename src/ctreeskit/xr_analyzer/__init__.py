@@ -26,11 +26,6 @@ from .xr_zonal_stats_module import (
     calculate_stats_with_categories,
 )
 
-__version__ = "0.1.1"
-__author__ = "Naomi Provost"
-__email__ = "nprovost@ctrees.org"
-
-
 __all__ = [
     # From spatial processor
     "process_geometry",

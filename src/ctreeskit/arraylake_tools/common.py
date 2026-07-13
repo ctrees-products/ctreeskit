@@ -95,7 +95,8 @@ class ArraylakeDatasetConfig:
                 self._config = json.load(f)
             return self._config
         except Exception as e:
-            raise ValueError(f"Could not load config for {dataset_name}: {e}")
+            raise ValueError(
+                f"Could not load config for {dataset_name}: {e}") from e
 
     def list_datasets(self) -> list:
         """
@@ -122,7 +123,7 @@ class ArraylakeDatasetConfig:
                 if file.endswith('.json')
             ]
         except Exception as e:
-            raise ValueError(f"Could not list datasets: {e}")
+            raise ValueError(f"Could not list datasets: {e}") from e
 
     @property
     def dataset_name(self) -> Optional[str]:

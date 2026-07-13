@@ -27,6 +27,7 @@ service wrappers only need to load a config and call these methods.
 
 # Standard library imports
 import json
+import logging
 from importlib import resources
 from typing import Any, Dict, Optional, Tuple
 
@@ -42,6 +43,8 @@ from arraylake import Client as arraylakeClient
 # Local application/library specific imports
 from .common import ArraylakeDatasetConfig
 
+logger = logging.getLogger(__name__)
+
 # Map the config's coarse ``unit_type`` to a concrete numpy dtype when no explicit
 # ``dtype`` is given. An explicit ``dtype`` in the variable config always wins so that
 # categorical products can preserve their native (often uint8) storage.
@@ -54,7 +57,7 @@ def load_config(name: str) -> Dict[str, Any]:
     ``ctreeskit/arraylake_tools/datasets_config``.
 
     Only placeholder/template schemas ship in this public package (e.g.
-    ``"categorical_raster_wtih_x_y_time"``). Real dataset configs reference internal
+    ``"categorical_raster_with_x_y_time"``). Real dataset configs reference internal
     S3 paths and are kept out of this public repo -- they live in the private
     ``ctrees-products/ctreeskit-internal`` repo. Load those from S3 with
     :class:`~ctreeskit.arraylake_tools.common.ArraylakeDatasetConfig`, or pass the
@@ -63,7 +66,7 @@ def load_config(name: str) -> Dict[str, Any]:
     Parameters
     ----------
     name : str
-        Config file stem, e.g. ``"categorical_raster_wtih_x_y_time"`` (with or
+        Config file stem, e.g. ``"categorical_raster_with_x_y_time"`` (with or
         without ``.json``).
 
     Returns
@@ -202,7 +205,7 @@ class AnnualRasterIngester:
             name=self.repo_name,
             bucket_config_nickname=self.bucket_nickname,
         )
-        print(f"repo ready: {self.repo_name} (bucket={self.bucket_nickname})")
+        logger.info("repo ready: %s (bucket=%s)", self.repo_name, self.bucket_nickname)
 
     # ------------------------------------------------------------------ schema
 
@@ -284,7 +287,8 @@ class AnnualRasterIngester:
             f"initialize schema {self.group_name}/{self.variable} "
             f"[{years[0]}-{years[-1]}] {self.dtype} nodata={self.nodata}"
         )
-        print(f"initialized schema (snapshot {snapshot}) shape={shape} dtype={self.dtype}")
+        logger.info("initialized schema (snapshot %s) shape=%s dtype=%s",
+                    snapshot, shape, self.dtype)
         return snapshot
 
     # ------------------------------------------------------------------ population
@@ -388,10 +392,10 @@ class AnnualRasterIngester:
                 "re-initialize the schema to include it")
 
         snapshot = session.commit(f"ingest {self.variable} {year} ({action})")
-        print(f"ingested {year}: {action} -> snapshot {snapshot}")
+        logger.info("ingested %s: %s -> snapshot %s", year, action, snapshot)
         if tag:
             repo.create_tag(tag, snapshot)
-            print(f"tagged snapshot {snapshot} as '{tag}'")
+            logger.info("tagged snapshot %s as '%s'", snapshot, tag)
         return snapshot
 
     @staticmethod
