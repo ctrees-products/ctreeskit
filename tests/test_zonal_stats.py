@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -73,20 +72,17 @@ class TestStatsWithCategories(unittest.TestCase):
         self.coords = {"y": y, "x": x}
         self.categorical = xr.DataArray(
             [[1, 1], [2, 2]], dims=["y", "x"], coords=self.coords,
-            name="classification")
-        self.continuous = xr.DataArray(
-            [[10.0, 20.0], [30.0, -5.0]], dims=["y", "x"], coords=self.coords,
-            name="value")
+            name="classification").rio.write_crs("EPSG:4326")
+        self.continuous = self._continuous([[10.0, 20.0], [30.0, -5.0]])
 
-    def _patch_match(self, continuous):
-        return patch(
-            "ctreeskit.xr_analyzer.xr_zonal_stats_module.reproject_match_ds",
-            return_value=(continuous, None))
+    def _continuous(self, values):
+        return xr.DataArray(
+            values, dims=["y", "x"], coords=self.coords,
+            name="value").rio.write_crs("EPSG:4326")
 
     def test_static_input(self):
-        with self._patch_match(self.continuous):
-            df = calculate_stats_with_categories(
-                self.categorical, self.continuous)
+        df = calculate_stats_with_categories(
+            self.categorical, self.continuous)
         self.assertEqual(list(df["category"]), [1, 2])
         self.assertAlmostEqual(df.loc[df.category == 1, "mean_value"].item(), 15.0)
         self.assertAlmostEqual(df.loc[df.category == 1, "std_value"].item(), 5.0)
@@ -94,17 +90,15 @@ class TestStatsWithCategories(unittest.TestCase):
         self.assertAlmostEqual(df.loc[df.category == 2, "mean_value"].item(), 30.0)
 
     def test_positive_only_false_keeps_nonpositive_values(self):
-        with self._patch_match(self.continuous):
-            df = calculate_stats_with_categories(
-                self.categorical, self.continuous, positive_only=False)
+        df = calculate_stats_with_categories(
+            self.categorical, self.continuous, positive_only=False)
         self.assertAlmostEqual(df.loc[df.category == 2, "mean_value"].item(), 12.5)
 
     def test_time_input(self):
         categorical_t = self.categorical.expand_dims(
             time=pd.date_range("2020-01-01", periods=2))
-        with self._patch_match(self.continuous):
-            df = calculate_stats_with_categories(
-                categorical_t, self.continuous)
+        df = calculate_stats_with_categories(
+            categorical_t, self.continuous)
         # 2 time steps x 2 categories, with a time column on every row
         self.assertEqual(len(df), 4)
         self.assertIn("time", df.columns)
@@ -112,11 +106,8 @@ class TestStatsWithCategories(unittest.TestCase):
         self.assertEqual(list(df["category"]), [1, 2, 1, 2])
 
     def test_category_with_no_valid_values(self):
-        continuous = xr.DataArray(
-            [[10.0, 20.0], [-1.0, -5.0]], dims=["y", "x"], coords=self.coords,
-            name="value")
-        with self._patch_match(continuous):
-            df = calculate_stats_with_categories(self.categorical, continuous)
+        continuous = self._continuous([[10.0, 20.0], [-1.0, -5.0]])
+        df = calculate_stats_with_categories(self.categorical, continuous)
         self.assertTrue(pd.isna(df.loc[df.category == 2, "mean_value"].item()))
 
 

@@ -2,7 +2,6 @@ import os
 import tempfile
 import json
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 import xarray as xr
@@ -103,9 +102,9 @@ class TestGeometryProcessing(unittest.TestCase):
 
 class TestRasterOperations(unittest.TestCase):
     def setUp(self):
-        # Create a simple test raster
+        # Global test raster: 5-degree pixels, descending latitude (north-up)
         lon = np.linspace(-180, 180, 73)
-        lat = np.linspace(-90, 90, 37)
+        lat = np.linspace(90, -90, 37)
         data = np.random.rand(len(lat), len(lon))
         self.test_raster = xr.DataArray(
             data=data,
@@ -130,35 +129,35 @@ class TestRasterOperations(unittest.TestCase):
         self.geom = process_geometry(
             Polygon([(-10, -10), (-10, 10), (10, 10), (10, -10)]))
 
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
-    @patch('xarray.DataArray.rio')
-    def test_clip_ds_to_bbox(self, mock_rio, mock_clip):
-        """Test clipping to bounding box."""
-        bbox = (-10, -10, 10, 10)
+    def test_clip_ds_to_bbox(self):
+        """Clipping to a bbox keeps exactly the pixels inside it."""
+        bbox = (-10.0, -10.0, 10.0, 10.0)
+        clipped = clip_ds_to_bbox(self.test_raster, bbox)
+        self.assertTrue((clipped.x >= -10).all() and (clipped.x <= 10).all())
+        self.assertTrue((clipped.y >= -10).all() and (clipped.y <= 10).all())
+        # 5-degree pixels: centers -10, -5, 0, 5, 10 survive on each axis
+        self.assertEqual(clipped.shape, (5, 5))
+        xr.testing.assert_equal(
+            clipped, self.test_raster.sel(x=slice(-10, 10)).sel(
+                y=self.test_raster.y[(self.test_raster.y >= -10)
+                                     & (self.test_raster.y <= 10)]))
 
-        # Configure mocks
-        mock_clip.return_value = self.test_raster
-        mock_clip.dims = self.test_raster.dims
+        # drop_time=True returns the first time slice
+        clipped_t = clip_ds_to_bbox(self.time_raster, bbox, drop_time=True)
+        self.assertNotIn("time", clipped_t.dims)
 
-        # Test basic clipping
-        clip_ds_to_bbox(self.test_raster, bbox)
-        mock_rio.clip_box.assert_called_once_with(
-            minx=-10, miny=-10, maxx=10, maxy=10)
-
-        # Test with time dimension and drop_time=True
-        clip_ds_to_bbox(self.time_raster, bbox, drop_time=True)
-
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
-    def test_clip_ds_to_geom(self, mock_clip_bbox):
-        """Test clipping to geometry."""
-        # Configure mocks
-        mock_clip_bbox.return_value = self.test_raster
-
-        # Mock the rio.clip method
-        with patch.object(self.test_raster.rio, 'clip', return_value=self.test_raster) as mock_clip:
-            clip_ds_to_geom(self.test_raster, self.geom)
-            mock_clip_bbox.assert_called_once()
-            mock_clip.assert_called_once()
+    def test_clip_ds_to_geom(self):
+        """Clipping to a triangle masks pixels outside it and keeps values inside."""
+        triangle = process_geometry(
+            Polygon([(-10, -10), (10, -10), (10, 10)]))
+        clipped = clip_ds_to_geom(self.test_raster, triangle)
+        # the far corner of the bounding box is outside the triangle
+        self.assertTrue(np.isnan(
+            float(clipped.sel(x=-10, y=10, method="nearest"))))
+        # a pixel inside the triangle keeps its original value
+        inside = clipped.sel(x=5, y=-5, method="nearest")
+        original = self.test_raster.sel(x=5, y=-5, method="nearest")
+        self.assertAlmostEqual(float(inside), float(original))
 
     def test_create_area_ds_from_degrees_ds(self):
         """Test calculating grid cell areas."""
@@ -176,27 +175,36 @@ class TestRasterOperations(unittest.TestCase):
             self.test_raster, output_in_ha=False)
         self.assertEqual(result_m2.attrs['units'], 'm²')
 
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.create_area_ds_from_degrees_ds')
-    def test_reproject_match_ds(self, mock_create_area, mock_clip):
-        """Test aligning and resampling datasets."""
-        # Configure mocks
-        mock_clip.return_value = self.test_raster
-        mock_aligned = self.test_raster.copy()
-        mock_create_area.return_value = xr.DataArray(
-            np.ones_like(self.test_raster))
+    def test_reproject_match_ds(self):
+        """A finer raster is resampled onto the template's exact grid."""
+        # template: 1-degree pixels over a 10x10-degree patch near the equator
+        template_y = np.linspace(9.5, 0.5, 10)
+        template_x = np.linspace(0.5, 9.5, 10)
+        template = xr.DataArray(
+            np.zeros((10, 10)), dims=["y", "x"],
+            coords={"y": template_y, "x": template_x})
+        template.rio.write_crs("EPSG:4326", inplace=True)
 
-        with patch.object(mock_clip.return_value.rio, 'reproject_match', return_value=mock_aligned):
-            # Test with default parameters
-            result, area = reproject_match_ds(
-                self.test_raster, self.test_raster)
-            mock_clip.assert_called_once()
-            mock_create_area.assert_called_once()
+        # target: same extent at 0.5-degree pixels, value = latitude band
+        target_y = np.linspace(9.75, 0.25, 20)
+        target_x = np.linspace(0.25, 9.75, 20)
+        target = xr.DataArray(
+            np.repeat(target_y, 20).reshape(20, 20), dims=["y", "x"],
+            coords={"y": target_y, "x": target_x})
+        target.rio.write_crs("EPSG:4326", inplace=True)
 
-            # Test without area grid
-            result, area = reproject_match_ds(
-                self.test_raster, self.test_raster, return_area_grid=False)
-            self.assertIsNone(area)
+        aligned, area = reproject_match_ds(template, target)
+        np.testing.assert_allclose(aligned.y.values, template_y)
+        np.testing.assert_allclose(aligned.x.values, template_x)
+        # nearest-neighbour values stay within the source latitude range
+        self.assertTrue(
+            (aligned.values >= 0.25).all() and (aligned.values <= 9.75).all())
+        self.assertEqual(area.shape, aligned.shape)
+        self.assertEqual(area.attrs["units"], "ha")
+
+        _, no_area = reproject_match_ds(
+            template, target, return_area_grid=False)
+        self.assertIsNone(no_area)
 
 
 class TestCreateProportionGeomMask(unittest.TestCase):
