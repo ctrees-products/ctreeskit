@@ -72,6 +72,9 @@ Versions prior to 0.2.0 were not tracked in this changelog.
   mapping.
 - Combined-classification codes are collision-free for class values >= 10 (e.g.
   primary 3 / secondary 12 no longer merges with primary 4 / secondary 2).
+- The automatic area-method choice in `create_area_ds_from_degrees_ds` considers the
+  whole latitude axis (geodesic when any latitude is poleward of 70°); previously it
+  inspected only the first row, so the method flipped with storage orientation.
 - `create_proportion_geom_mask` works on all paths: the default path no longer
   crashes, the below-threshold binary fallback no longer swaps the clip arguments,
   and weighted proportions are computed on the clipped grid from the geometry

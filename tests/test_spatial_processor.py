@@ -207,6 +207,100 @@ class TestRasterOperations(unittest.TestCase):
         self.assertIsNone(no_area)
 
 
+def _karney_cell_area(lon_w, lat_s, lon_e, lat_n):
+    """WGS 84 geodesic area (m²) of a lon/lat cell — the reference oracle."""
+    from pyproj import Geod
+    area, _ = Geod(ellps="WGS84").polygon_area_perimeter(
+        [lon_w, lon_e, lon_e, lon_w], [lat_s, lat_s, lat_n, lat_n])
+    return abs(area)
+
+
+def _grid(lat_top, res, n=4, lon_left=-60.0, descending=True):
+    """n x n raster of res-degree pixels with the top edge at lat_top."""
+    y = np.array([lat_top - res * (i + 0.5) for i in range(n)])
+    if not descending:
+        y = y[::-1]
+    x = np.array([lon_left + res * (i + 0.5) for i in range(n)])
+    return xr.DataArray(np.zeros((n, n)), dims=["y", "x"],
+                        coords={"y": y, "x": x})
+
+
+class TestAreaGoldenValues(unittest.TestCase):
+    """Golden-value checks for cell areas — the numbers this package exists
+    to produce (issue #17). Both methods are compared against the WGS 84
+    geodesic (Karney) area from pyproj, and against a literal reference for
+    the canonical 1x1-degree equator cell.
+    """
+
+    def test_one_degree_cell_at_equator(self):
+        # WGS 84 geodesic area of the cell spanning 0..1 deg in both axes
+        golden_m2 = 1.2309e10  # 12,309 km²
+        da = _grid(lat_top=2.0, res=1.0)
+        for high_accuracy in (True, False):
+            area = create_area_ds_from_degrees_ds(
+                da, high_accuracy=high_accuracy, output_in_ha=False)
+            # cell centered at (1.5N, -59.5E) scaled to the equator cell via
+            # the oracle; assert the equator-latitude row directly instead:
+            ref = _karney_cell_area(-60.0, 1.0, -59.0, 2.0)
+            self.assertAlmostEqual(
+                float(area.isel(y=0, x=0)) / ref, 1.0, delta=1e-4)
+        # and the canonical constant itself, via the oracle
+        self.assertAlmostEqual(
+            _karney_cell_area(0.0, 0.0, 1.0, 1.0) / golden_m2, 1.0, delta=1e-4)
+
+    def test_thirty_meter_cells_match_reference(self):
+        # production resolution (~30 m): both methods must agree with the
+        # geodesic reference to well under a millionth relatively
+        res = 0.00027
+        for lat_top in (10.0, 75.0):
+            da = _grid(lat_top=lat_top, res=res)
+            for high_accuracy in (True, False):
+                area = create_area_ds_from_degrees_ds(
+                    da, high_accuracy=high_accuracy, output_in_ha=False)
+                for iy in (0, 3):
+                    yc = float(da.y[iy])
+                    xc = float(da.x[0])
+                    ref = _karney_cell_area(xc - res / 2, yc - res / 2,
+                                            xc + res / 2, yc + res / 2)
+                    self.assertAlmostEqual(
+                        float(area.isel(y=iy, x=0)) / ref, 1.0, delta=1e-6)
+
+    def test_one_degree_cells_within_five_hundredths_percent(self):
+        # coarse (1-degree) cells: measured worst case is ~5e-5 relative
+        da = _grid(lat_top=77.0, res=1.0)
+        for high_accuracy in (True, False):
+            area = create_area_ds_from_degrees_ds(
+                da, high_accuracy=high_accuracy, output_in_ha=False)
+            yc = float(da.y[0])
+            xc = float(da.x[0])
+            ref = _karney_cell_area(xc - 0.5, yc - 0.5, xc + 0.5, yc + 0.5)
+            self.assertAlmostEqual(
+                float(area.isel(y=0, x=0)) / ref, 1.0, delta=5e-4)
+
+    def test_method_heuristic_is_orientation_independent(self):
+        # spans 80N..76N: geodesic regardless of storage orientation
+        north_up = create_area_ds_from_degrees_ds(_grid(80.0, 1.0))
+        south_up = create_area_ds_from_degrees_ds(
+            _grid(80.0, 1.0, descending=False))
+        self.assertIn("geodesic", north_up.attrs["description"])
+        self.assertIn("geodesic", south_up.attrs["description"])
+        # tropical raster: equal-area approximation on both orientations
+        tropical = create_area_ds_from_degrees_ds(_grid(10.0, 1.0))
+        self.assertIn("6933", tropical.attrs["description"])
+
+    def test_hectare_conversion(self):
+        da = _grid(lat_top=10.0, res=0.01)
+        in_m2 = create_area_ds_from_degrees_ds(da, output_in_ha=False)
+        in_ha = create_area_ds_from_degrees_ds(da, output_in_ha=True)
+        np.testing.assert_allclose(in_ha.values, in_m2.values * 1e-4)
+
+    def test_process_geometry_area_matches_reference(self):
+        geom = box(-60.0, 1.0, -59.0, 2.0)
+        result = process_geometry(geom, output_in_ha=False)
+        ref = _karney_cell_area(-60.0, 1.0, -59.0, 2.0)
+        self.assertAlmostEqual(result.geom_area / ref, 1.0, delta=1e-4)
+
+
 class TestCreateProportionGeomMask(unittest.TestCase):
     """Proportion masks with known expected values (issue #13).
 

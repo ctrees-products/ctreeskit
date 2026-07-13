@@ -446,9 +446,10 @@ def create_area_ds_from_degrees_ds(input_ds:  Union[xr.DataArray, xr.Dataset],
     lon_center = input_ds.x.values  # assumed sorted west to east
 
     if high_accuracy is None:
-        high_accuracy = True
-        if -70 <= lat_center[0] <= 70:
-            high_accuracy = False
+        # Geodesic when any latitude is poleward of 70 degrees; the equal-area
+        # approximation elsewhere. Decided over the whole axis so the choice is
+        # independent of storage orientation (north-up vs south-up).
+        high_accuracy = bool(np.max(np.abs(lat_center)) > 70)
 
     diff_x = np.diff(lon_center)
     diff_y = np.diff(lat_center)
