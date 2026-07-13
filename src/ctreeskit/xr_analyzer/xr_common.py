@@ -26,6 +26,22 @@ def get_flag_meanings(xr_dataset):
     return None
 
 
+def get_flag_values(xr_dataset):
+    """Get integer flag values from the dataset attributes.
+
+    Accepts either a sequence (CF-style ``flag_values`` array) or a
+    space-separated string, returning a list of ints, or None when the
+    attribute is absent.
+    """
+    attrs = getattr(xr_dataset, "attrs", {})
+    flag_values = attrs.get("flag_values")
+    if flag_values is None:
+        return None
+    if isinstance(flag_values, str):
+        flag_values = flag_values.split()
+    return [int(v) for v in flag_values]
+
+
 def agg_classified_mapped_da(classification_mapping: dict, data_array: xr.DataArray):
     """
     Aggregate classification mapping to a DataArray.
@@ -48,4 +64,5 @@ def agg_classified_mapped_da(classification_mapping: dict, data_array: xr.DataAr
     return (classes, data_array)
 
 
-__all__ = ["get_single_var_data_array", "get_flag_meanings", "agg_classified_mapped_da"]
+__all__ = ["get_single_var_data_array", "get_flag_meanings",
+           "get_flag_values", "agg_classified_mapped_da"]
