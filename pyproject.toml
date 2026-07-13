@@ -79,6 +79,12 @@ dev = [
     "mypy>=1.5.1",
 ]
 
+[tool.ruff]
+line-length = 100
+# dask_analyzer is scheduled to be replaced by the rasterix dependency
+# (https://github.com/ctrees-products/ctreeskit/issues/15).
+extend-exclude = ["src/ctreeskit/dask_analyzer"]
+
 [project.urls]
 Homepage = "https://github.com/ctrees-products/ctreeskit"
 Repository = "https://github.com/ctrees-products/ctreeskit.git"

@@ -26,10 +26,33 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 - The heavy, GDAL-dependent `dask_analyzer` subpackage (exactextract, odc-geo) moved
   behind an optional `zonal` extra with a guarded import, so the core package stays
   pip-installable with no GDAL requirement.
+- Categorical zonal stats are computed with a single flag-aware groupby
+  ([flox](https://flox.readthedocs.io/)-accelerated, dask-compatible); flox is a new
+  core dependency. CF `flag_values` metadata, when present, defines the class label
+  set, and `calculate_categorical_area_stats(reshape=False)` returns a tidy
+  long-format DataFrame.
+- `create_combined_classification` encodes class pairs as integers
+  (`primary * modulus + secondary`, with the modulus stored in the
+  `combined_modulus` attribute). **Breaking** for consumers decoding the previous
+  decimal-fraction codes.
+- CI runs `ruff check` and triggers on pull requests as well as pushes.
 
 ### Fixed
 - Zonal-stats functions no longer crash on documented input shapes (e.g. `area_ds`
   passed as a `DataArray`).
+- Static (non-time) categorical area stats reported only the first class and dropped
+  the rest; all classes are now reported, and the static and time-series paths agree
+  on the same data.
+- Class columns are matched to `flag_meanings` by flag value; non-contiguous class
+  codes (e.g. 10/20/30) were previously mislabeled or dropped by the positional
+  mapping.
+- Combined-classification codes are collision-free for class values >= 10 (e.g.
+  primary 3 / secondary 12 no longer merges with primary 4 / secondary 2).
+- `create_proportion_geom_mask` works on all paths: the default path no longer
+  crashes, the below-threshold binary fallback no longer swaps the clip arguments,
+  and weighted proportions are computed on the clipped grid from the geometry
+  footprint (previously misregistered whenever clipping cropped the raster, with
+  zero-valued pixels skipped).
 - GeoJSON input is accepted per RFC 7946 even without a `crs` member.
 - Bounding-box region writes in `AnnualRasterIngester` are rejected when the
   requested subset doesn't align with the stored grid, instead of silently writing

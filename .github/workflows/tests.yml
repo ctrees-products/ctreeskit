@@ -1,6 +1,8 @@
 # .github/workflows/tests.yml
 name: Tests
-on: [push]
+on:
+  push:
+  pull_request:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -22,6 +24,9 @@ jobs:
       # it needs a system GDAL that isn't pip-installable on the runner.
       - name: Install the project
         run: uv sync --locked --extra interactive --group dev
+
+      - name: Lint
+        run: uv run ruff check .
 
       - name: Run tests
         run: uv run pytest tests/
