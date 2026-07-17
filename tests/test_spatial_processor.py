@@ -24,7 +24,7 @@ class TestGeometryProcessing(unittest.TestCase):
         # Create a simple polygon
         self.polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 
-        # Create a mock GeoJSON file
+        # Create a sample GeoJSON file on disk
         self.geojson_data = {
             "type": "FeatureCollection",
             "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
