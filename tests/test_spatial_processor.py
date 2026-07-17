@@ -249,11 +249,12 @@ class TestAreaGoldenValues(unittest.TestCase):
             _karney_cell_area(0.0, 0.0, 1.0, 1.0) / golden_m2, 1.0, delta=1e-4)
 
     def test_production_resolution_cells_match_reference(self):
-        # production resolutions (~30 m CIDDR-class, ~10 m Sentinel-2-class):
-        # both methods must agree with the geodesic reference to well under a
-        # millionth relatively
-        for res in (0.00027, 0.00009):
-            for lat_top in (10.0, 75.0):
+        # production resolutions (~30 m CIDDR-class, ~10 m Sentinel-2-class,
+        # ~60 cm NAIP-class): both methods must agree with the geodesic
+        # reference to well under a millionth relatively, at tropical, CONUS,
+        # and high latitudes
+        for res in (0.00027, 0.00009, 0.0000054):
+            for lat_top in (10.0, 45.0, 75.0):
                 da = _grid(lat_top=lat_top, res=res)
                 for high_accuracy in (True, False):
                     area = create_area_ds_from_degrees_ds(
