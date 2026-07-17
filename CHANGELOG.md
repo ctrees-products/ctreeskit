@@ -36,6 +36,9 @@ Versions prior to 0.2.0 were not tracked in this changelog.
   `combined_modulus` attribute). **Breaking** for consumers decoding the previous
   decimal-fraction codes.
 - CI runs `ruff check` and triggers on pull requests as well as pushes.
+- `AnnualRasterIngester` no longer falls back to a default Arraylake organization:
+  dataset configs must carry `organization` (or a full `repo` name). **Breaking**
+  for configs that relied on the implicit default.
 
 ### Removed
 - The legacy `arraylake_tools` classes `ArraylakeRepoCreator`, `ArraylakeRepoInitializer`,
