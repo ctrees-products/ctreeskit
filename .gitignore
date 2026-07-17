@@ -175,5 +175,3 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# Claude Code project instructions (may contain internal/private context)
-CLAUDE.md
