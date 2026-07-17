@@ -1,11 +1,10 @@
 # CTrees Tools - Beta Version
 CTreesKit is a public package used split into two sections, "arraylake_tools" which allows a simplified way of converting from geotiffs -> zarr format and saving the data into [arraylake (by Earthmover)](https://docs.earthmover.io/concepts/overview). "xr_analyzer" is a small wrapper for xarray functions used for zonal stats that use the arraylake datasource as the input. These can also be used with Earthmover's opensource [icechunk format](https://icechunk.io/en/latest/overview/) as well! 
-Tutorials to come in May 2025 with additional functionality. 
 [Slide Deck for CNG Conference about this pip package](https://drive.google.com/file/d/10UO7PcYldF-FdihrmBiYmjsGXC1EHRHm/view?usp=sharing) 
 
 ## Open Source Components (ctreeskit-core)
-Current:
 ```bash
+pip install git+https://github.com/ctrees-products/ctreeskit.git
 pip install ctreeskit
 ```
 
@@ -16,7 +15,6 @@ pip install ctreeskit
 
 ## Table of Contents
 1. [Installation](#installation)
-   - [PyPI Installation](#from-pypi)
    - [GitHub Installation](#from-github)
    - [Development Setup](#development-installation)
    - [Testing](#testing)
@@ -29,49 +27,48 @@ pip install ctreeskit
 
 ## Installation
 
-You can install ctreeskit either from PyPI or directly from GitHub:
-
-### From PyPI
-```bash
-pip install ctreeskit
-```
-
 ### From GitHub
 ```bash
 pip install git+https://github.com/ctrees-products/ctreeskit.git
 ```
 
 ### Development Installation
-For development, you can install with all dependencies:
+The project is managed with [uv](https://docs.astral.sh/uv/). `uv sync` creates the
+virtual environment and installs the locked dependencies:
 ```bash
 # Clone the repository
 git clone https://github.com/ctrees-products/ctreeskit.git
 cd ctreeskit
 
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On macOS/Linux
-
-# Install in editable mode with all dependencies
-pip install -e ".[all]"
+# Core + interactive extra + dev tooling (pip-only, no GDAL)
+uv sync --extra interactive --group dev
 ```
+
+Coverage-fraction rasterization (geometry-weighted zonal stats, via
+[rasterix](https://rasterix.readthedocs.io/) + exactextract) lives behind the
+optional `zonal` extra — fully pip-installable, no GDAL required:
+```bash
+uv sync --extra zonal               # rasterix, exactextract, sparse
+```
+See the coverage-fraction example in [docs/xr_analyzer.md](./docs/xr_analyzer.md).
+Note: the exactextract backend needs `sparse` (numba), which does not support
+Python 3.14 yet; use Python 3.12/3.13 for the `zonal` extra.
 
 ## Dependencies
 
-- xarray
-- rioxarray (for spatial operations)
-- numpy
-- shapely
-- pyproj
-- s3fs (for Amazon S3 storage access)
-- python > 3.11
+- Python >= 3.12
+- xarray / rioxarray / rasterio (spatial operations)
+- numpy / pandas / scipy / shapely / pyproj
+- s3fs (Amazon S3 access)
+- arraylake, icechunk (>=2.0.6), zarr (>=3.1.0) for versioned Icechunk repos
+- dask (chunked array processing)
 
 ## Testing
 
-To run the tests for the ctreeskit package, navigate to the project directory and execute:
+The tests run under uv:
 
 ```bash
-pytest -m tests
+uv run pytest tests/
 ```
 
 ## Contributing
@@ -115,7 +112,7 @@ This module provides tools to:
 
 This module provides tools to:
 
-- Calculate area statistics for different classes in categorical rasters
-- Support both time-series and static (non-temporal) raster data
-- Offer flexible area calculation options (pixel counts, constant values, or spatially-variable areas)
-- Generate tabular summaries as pandas DataFrames
+- Create and initialize Arraylake/Icechunk repositories from a dataset configuration
+- Allocate a lazy `(time, y, x)` schema template, then populate it with annual raster data
+- Ingest annual GeoTIFF/VRT mosaics from S3 with Dask-backed, chunked writes
+- Region-write or append each year onto a versioned Icechunk time axis

@@ -314,3 +314,36 @@ area_stats = calculate_categorical_area_stats(ds, area_ds)
 
 area_stats.to_csv("output_area_stats.csv")
 ```
+
+## Coverage-fraction weighted zonal statistics
+
+For area statistics weighted by *how much* of each pixel a geometry covers
+(rather than a binary in/out mask), use
+[rasterix](https://rasterix.readthedocs.io/)'s exactextract-backed coverage
+(installed with the `zonal` extra: `pip install "ctreeskit[zonal]"`). The
+coverage grid is stored sparse — only pixels the geometry touches are
+materialized — and the computation is dask-aware, so chunked rasters stay lazy
+and no full-size dense mask is ever written out.
+
+```python
+import geopandas as gpd
+from rasterix.rasterize.exact import coverage
+
+from ctreeskit import calculate_categorical_area_stats, create_area_ds_from_degrees_ds
+
+classes = ...  # categorical (y, x) DataArray with CRS metadata
+geoms = gpd.read_file("aoi.geojson")
+
+# fraction of each pixel covered by the geometry: dims (geometry, y, x)
+cover = coverage(classes, geoms, coverage_weight="fraction")
+
+# densify one geometry's (sparse) coverage grid and weight per-pixel areas by it
+cover_2d = cover.isel(geometry=0)
+cover_2d = cover_2d.copy(data=cover_2d.data.todense())
+area = create_area_ds_from_degrees_ds(classes)
+
+stats = calculate_categorical_area_stats(classes, area_ds=area * cover_2d)
+```
+
+Edge pixels contribute only their covered fraction, so `total_area` matches the
+geometry's true footprint instead of over-counting boundary pixels.

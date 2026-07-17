@@ -4,12 +4,12 @@ from typing import Union, Optional, List, Protocol
 
 import numpy as np
 import xarray as xr
-import pandas as pd
 import s3fs
 import pyproj
 from pyproj import Proj, Geod
 from shapely.geometry import box, shape
 from shapely.ops import transform, unary_union
+from rasterio import features
 from rasterio.enums import Resampling
 
 # A simple protocol to type-check geometry-like objects.
@@ -98,10 +98,12 @@ def process_geometry(geom_source: GeometrySource,
                 geojson_dict = json.load(f)
         geometries = [shape(feature['geometry'])
                       for feature in geojson_dict.get('features', [])]
+        # RFC 7946 removed the 'crs' member: GeoJSON coordinates are WGS84 by
+        # definition. Still honor a legacy (GJ2008) 'crs' member if present.
         crs = geojson_dict.get('crs', {}).get(
             'properties', {}).get('name', None)
         if crs is None:
-            raise ValueError("Input geometry has no CRS information")
+            crs = "EPSG:4326"
     elif isinstance(geom_source, list) and all(hasattr(g, 'geom_type') for g in geom_source):
         geometries = geom_source
         crs = "EPSG:4326"  # default CRS
@@ -315,9 +317,9 @@ def create_proportion_geom_mask(input_ds: xr.DataArray, geom_source: ExtendedGeo
     """
     Create a weighted mask for a raster based on the intersection proportions of its pixels with a geometry.
 
-    This function calculates, for each pixel in the input raster, the proportion of the pixel area intersecting the
-    provided geometry. If the pixel area (derived from the raster transform) is below a given ratio threshold
-    (unless overwrite is True), the function returns a binary mask instead.
+    This function calculates, for each pixel on the geometry-clipped grid, the proportion of the pixel area
+    intersecting the provided geometry. Candidate pixels come from rasterizing the geometry footprint, so the
+    mask is independent of the raster's data values.
 
     Parameters
     ----------
@@ -325,58 +327,91 @@ def create_proportion_geom_mask(input_ds: xr.DataArray, geom_source: ExtendedGeo
          The input raster whose pixel intersection proportions are to be computed.
     geom_source : ExtendedGeometryInput
          Either a GeometryData instance or a raw geometry source (e.g., a file path, a single geometry, or a list).
-         If not a GeometryData instance, it is processed via process_geometry.s
+         If not a GeometryData instance, it is processed via process_geometry.
     pixel_ratio : float, default 0.001
-         The minimum ratio of pixel area to geometry area required before performing a weighted computation;
-         otherwise, a binary mask is returned.
+         The minimum ratio of pixel area to geometry area (both measured in the raster's CRS) required before
+         performing a weighted computation; below it, edge-pixel proportions are negligible and a binary mask
+         is returned.
     overwrite : bool, default False
          If True, bypasses the pixel_ratio check and always computes weighted proportions.
 
     Returns
     -------
     xr.DataArray
-         A DataArray mask where each pixel value (between 0 and 1) represents the fraction of that pixel's area
-         that intersects the geometry. Pixels with no intersection return 0.
+         A 2-D DataArray mask on the clipped grid where each pixel value (between 0 and 1) represents the
+         fraction of that pixel's area that intersects the geometry. Pixels with no intersection return 0.
     """
-    # Use existing caching and binary mask creation
     if not isinstance(geom_source, GeometryData):
         geom_source = process_geometry(geom_source, True)
-    geom = geom_source.geom
 
-    raster_transform = input_ds.rio.transform()
-    pixel_size = abs(raster_transform.a * raster_transform.e)
-    percentage_array = np.zeros(input_ds.shape, dtype=np.float32)
+    # All intersection math happens in the raster's CRS on the clipped grid.
+    geoms = _geoms_in_crs(geom_source, input_ds.rio.crs)
+    clipped_raster = clip_ds_to_geom(input_ds, geom_source, all_touch=True)
+    clipped_transform = clipped_raster.rio.transform()
+    pixel_size = abs(clipped_transform.a * clipped_transform.e)
+    grid_shape = (clipped_raster.sizes["y"], clipped_raster.sizes["x"])
+
+    union_geom = unary_union(geoms)
     # When overwrite is False, enforce the pixel_ratio check.
     if not overwrite:
-        ratio = pixel_size / geom.geom_area
+        ratio = pixel_size / union_geom.area
         if ratio < pixel_ratio:
             warnings.warn(
-                f"(pixel area ratio {ratio:.3e} is below {pixel_ratio*100:.3e}% of the project area). "
-                "Weighted mask computation skipped; binary mask automatically set to self.geom_mask."
-                "Use overwrite=True to utilize porportion-based mask computation.",
+                f"Pixel-to-geometry area ratio {ratio:.3e} is below "
+                f"{pixel_ratio:.3e}: edge-pixel proportions are negligible, "
+                "returning a binary mask. Use overwrite=True to force the "
+                "proportion-based computation.",
                 UserWarning
             )
-            clipped_raster = clip_ds_to_geom(geom_source, input_ds)
-            return xr.where(clipped_raster.notnull(), 1, 0)
+            binary = features.rasterize(
+                geoms, out_shape=grid_shape, transform=clipped_transform,
+                fill=0, default_value=1, dtype="uint8")
+            return _mask_data_array(binary, clipped_raster,
+                                    'Binary geometry mask (0 or 1)')
 
-    clipped_raster = clip_ds_to_geom(geom_source, input_ds, all_touch=True)
-    # Loop over nonzero pixels:
-    y_idx, x_idx = np.nonzero(clipped_raster.data)
-    for y, x in zip(y_idx, x_idx):
-        x_min, y_min = raster_transform * (x, y)
-        x_max, y_max = raster_transform * (x + 1, y + 1)
-        pixel_geom = box(x_min, y_min, x_max, y_max)
-        total_int = sum(geom.intersection(
-            pixel_geom).area for geom in geom_source.geom)
-        percentage_array[y, x] = min(total_int / pixel_size, 1.0)
+    # Candidate pixels come from the geometry footprint (every pixel the
+    # geometry touches), independent of the raster's data values.
+    candidates = features.rasterize(
+        geoms, out_shape=grid_shape, transform=clipped_transform,
+        fill=0, default_value=1, all_touched=True, dtype="uint8")
+    percentage_array = np.zeros(grid_shape, dtype=np.float32)
+    for y, x in zip(*np.nonzero(candidates)):
+        x_left, y_top = clipped_transform * (x, y)
+        x_right, y_bottom = clipped_transform * (x + 1, y + 1)
+        pixel_geom = box(min(x_left, x_right), min(y_top, y_bottom),
+                         max(x_left, x_right), max(y_top, y_bottom))
+        intersection = union_geom.intersection(pixel_geom).area
+        percentage_array[y, x] = min(intersection / pixel_size, 1.0)
 
+    return _mask_data_array(percentage_array, clipped_raster,
+                            'Pixel intersection proportions (0-1)')
+
+
+def _geoms_in_crs(geom_source: GeometryData, raster_crs) -> List:
+    """The source geometries expressed in the raster's CRS."""
+    geoms = geom_source.geom
+    if raster_crs is None or geom_source.geom_crs is None:
+        return geoms
+    source_crs = pyproj.CRS.from_user_input(geom_source.geom_crs)
+    target_crs = pyproj.CRS.from_user_input(raster_crs)
+    if source_crs == target_crs:
+        return geoms
+    transformer = pyproj.Transformer.from_crs(
+        source_crs, target_crs, always_xy=True).transform
+    return [transform(transformer, g) for g in geoms]
+
+
+def _mask_data_array(values: np.ndarray, template: xr.DataArray,
+                     description: str) -> xr.DataArray:
+    """2-D mask DataArray on the template's y/x grid."""
     result = xr.DataArray(
-        percentage_array,
-        coords=clipped_raster.coords,
-        dims=clipped_raster.dims,
-        attrs={'units': 'proportion',
-               'description': 'Pixel intersection proportions (0-1)'}
+        values,
+        coords={"y": template.y, "x": template.x},
+        dims=("y", "x"),
+        attrs={'units': 'proportion', 'description': description},
     )
+    if template.rio.crs is not None:
+        result = result.rio.write_crs(template.rio.crs)
     return result
 
 
@@ -411,9 +446,10 @@ def create_area_ds_from_degrees_ds(input_ds:  Union[xr.DataArray, xr.Dataset],
     lon_center = input_ds.x.values  # assumed sorted west to east
 
     if high_accuracy is None:
-        high_accuracy = True
-        if -70 <= lat_center[0] <= 70:
-            high_accuracy = False
+        # Geodesic when any latitude is poleward of 70 degrees; the equal-area
+        # approximation elsewhere. Decided over the whole axis so the choice is
+        # independent of storage orientation (north-up vs south-up).
+        high_accuracy = bool(np.max(np.abs(lat_center)) > 70)
 
     diff_x = np.diff(lon_center)
     diff_y = np.diff(lat_center)
