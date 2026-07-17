@@ -55,8 +55,9 @@ def load_config(name: str) -> Dict[str, Any]:
 
     Only placeholder/template schemas ship in this public package (e.g.
     ``"categorical_raster_wtih_x_y_time"``). Real dataset configs reference
-    organization-internal S3 paths and are kept out of this public repo -- keep
-    yours in a private config store (e.g. an S3 config registry). Load those with
+    private storage paths and are kept out of this public repo -- keep yours
+    wherever suits your setup (an S3 config registry, a local directory). Load
+    S3-hosted configs with
     :class:`~ctreeskit.arraylake_tools.common.ArraylakeDatasetConfig`, or pass the
     parsed dict straight to :class:`AnnualRasterIngester`.
 
@@ -89,8 +90,8 @@ class AnnualRasterIngester:
     Parameters
     ----------
     config : Dict[str, Any]
-        Dataset configuration dictionary (e.g. ``annual_forest_cover_30m.json``
-        loaded from your organization's private config registry).
+        Dataset configuration dictionary (e.g. a parsed
+        ``annual_forest_cover_30m.json`` from your private config store).
     token : Optional[str]
         Arraylake API token. If omitted (and no ``client`` is passed), the client falls
         back to the cached credentials from ``arraylake auth login`` / the
