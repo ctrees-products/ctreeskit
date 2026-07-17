@@ -248,22 +248,23 @@ class TestAreaGoldenValues(unittest.TestCase):
         self.assertAlmostEqual(
             _karney_cell_area(0.0, 0.0, 1.0, 1.0) / golden_m2, 1.0, delta=1e-4)
 
-    def test_thirty_meter_cells_match_reference(self):
-        # production resolution (~30 m): both methods must agree with the
-        # geodesic reference to well under a millionth relatively
-        res = 0.00027
-        for lat_top in (10.0, 75.0):
-            da = _grid(lat_top=lat_top, res=res)
-            for high_accuracy in (True, False):
-                area = create_area_ds_from_degrees_ds(
-                    da, high_accuracy=high_accuracy, output_in_ha=False)
-                for iy in (0, 3):
-                    yc = float(da.y[iy])
-                    xc = float(da.x[0])
-                    ref = _karney_cell_area(xc - res / 2, yc - res / 2,
-                                            xc + res / 2, yc + res / 2)
-                    self.assertAlmostEqual(
-                        float(area.isel(y=iy, x=0)) / ref, 1.0, delta=1e-6)
+    def test_production_resolution_cells_match_reference(self):
+        # production resolutions (~30 m CIDDR-class, ~10 m Sentinel-2-class):
+        # both methods must agree with the geodesic reference to well under a
+        # millionth relatively
+        for res in (0.00027, 0.00009):
+            for lat_top in (10.0, 75.0):
+                da = _grid(lat_top=lat_top, res=res)
+                for high_accuracy in (True, False):
+                    area = create_area_ds_from_degrees_ds(
+                        da, high_accuracy=high_accuracy, output_in_ha=False)
+                    for iy in (0, 3):
+                        yc = float(da.y[iy])
+                        xc = float(da.x[0])
+                        ref = _karney_cell_area(xc - res / 2, yc - res / 2,
+                                                xc + res / 2, yc + res / 2)
+                        self.assertAlmostEqual(
+                            float(area.isel(y=iy, x=0)) / ref, 1.0, delta=1e-6)
 
     def test_one_degree_cells_within_five_hundredths_percent(self):
         # coarse (1-degree) cells: measured worst case is ~5e-5 relative
