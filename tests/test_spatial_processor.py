@@ -2,7 +2,6 @@ import os
 import tempfile
 import json
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 import xarray as xr
@@ -25,7 +24,7 @@ class TestGeometryProcessing(unittest.TestCase):
         # Create a simple polygon
         self.polygon = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
 
-        # Create a mock GeoJSON file
+        # Create a sample GeoJSON file on disk
         self.geojson_data = {
             "type": "FeatureCollection",
             "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
@@ -130,35 +129,38 @@ class TestRasterOperations(unittest.TestCase):
         self.geom = process_geometry(
             Polygon([(-10, -10), (-10, 10), (10, 10), (10, -10)]))
 
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
-    @patch('xarray.DataArray.rio')
-    def test_clip_ds_to_bbox(self, mock_rio, mock_clip):
-        """Test clipping to bounding box."""
-        bbox = (-10, -10, 10, 10)
+    def test_clip_ds_to_bbox(self):
+        """Clipping to a bbox returns exactly the source cells inside it."""
+        bbox = (-10.0, -10.0, 10.0, 10.0)
+        clipped = clip_ds_to_bbox(self.test_raster, bbox)
+        self.assertTrue(bool((clipped.x >= -10).all() and (clipped.x <= 10).all()))
+        self.assertTrue(bool((clipped.y >= -10).all() and (clipped.y <= 10).all()))
+        expected = self.test_raster.sel(x=slice(-10, 10), y=slice(-10, 10))
+        np.testing.assert_array_equal(
+            np.sort(clipped.values, axis=None), np.sort(expected.values, axis=None))
 
-        # Configure mocks
-        mock_clip.return_value = self.test_raster
-        mock_clip.dims = self.test_raster.dims
+    def test_clip_ds_to_bbox_drop_time(self):
+        """drop_time=True reduces a time stack to a single spatial slice."""
+        bbox = (-10.0, -10.0, 10.0, 10.0)
+        with_time = clip_ds_to_bbox(self.time_raster, bbox)
+        self.assertIn("time", with_time.dims)
+        self.assertEqual(with_time.sizes["time"], 3)
+        no_time = clip_ds_to_bbox(self.time_raster, bbox, drop_time=True)
+        self.assertNotIn("time", no_time.dims)
 
-        # Test basic clipping
-        clip_ds_to_bbox(self.test_raster, bbox)
-        mock_rio.clip_box.assert_called_once_with(
-            minx=-10, miny=-10, maxx=10, maxy=10)
-
-        # Test with time dimension and drop_time=True
-        clip_ds_to_bbox(self.time_raster, bbox, drop_time=True)
-
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
-    def test_clip_ds_to_geom(self, mock_clip_bbox):
-        """Test clipping to geometry."""
-        # Configure mocks
-        mock_clip_bbox.return_value = self.test_raster
-
-        # Mock the rio.clip method
-        with patch.object(self.test_raster.rio, 'clip', return_value=self.test_raster) as mock_clip:
-            clip_ds_to_geom(self.test_raster, self.geom)
-            mock_clip_bbox.assert_called_once()
-            mock_clip.assert_called_once()
+    def test_clip_ds_to_geom(self):
+        """Pixels outside the geometry are masked; values inside are preserved."""
+        # Right triangle covering the region above the y = x diagonal.
+        triangle = process_geometry(
+            Polygon([(-10, -10), (-10, 10), (10, 10)]))
+        clipped = clip_ds_to_geom(self.test_raster, triangle)
+        # Cell well inside the triangle keeps its source value.
+        inside = float(clipped.sel(x=-5, y=5))
+        self.assertAlmostEqual(
+            inside, float(self.test_raster.sel(x=-5, y=5)))
+        # Cell inside the bbox but below the diagonal is masked out.
+        outside = float(clipped.sel(x=5, y=-5))
+        self.assertTrue(np.isnan(outside))
 
     def test_create_area_ds_from_degrees_ds(self):
         """Test calculating grid cell areas."""
@@ -176,27 +178,25 @@ class TestRasterOperations(unittest.TestCase):
             self.test_raster, output_in_ha=False)
         self.assertEqual(result_m2.attrs['units'], 'm²')
 
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.clip_ds_to_bbox')
-    @patch('ctreeskit.xr_analyzer.xr_spatial_processor_module.create_area_ds_from_degrees_ds')
-    def test_reproject_match_ds(self, mock_create_area, mock_clip):
-        """Test aligning and resampling datasets."""
-        # Configure mocks
-        mock_clip.return_value = self.test_raster
-        mock_aligned = self.test_raster.copy()
-        mock_create_area.return_value = xr.DataArray(
-            np.ones_like(self.test_raster))
+    def test_reproject_match_ds(self):
+        """Aligning to a template clips to its extent and matches its grid."""
+        template = self.test_raster.sel(x=slice(-10, 10), y=slice(-10, 10))
+        aligned, area = reproject_match_ds(template, self.test_raster)
+        # The aligned raster is on exactly the template grid, with the source
+        # values preserved (identical resolution -> nearest is an identity).
+        self.assertEqual(aligned.sizes["y"], template.sizes["y"])
+        self.assertEqual(aligned.sizes["x"], template.sizes["x"])
+        np.testing.assert_allclose(
+            aligned.sortby("y").sortby("x").values,
+            template.sortby("y").sortby("x").values)
+        # The area grid is computed on the aligned raster, in hectares.
+        self.assertIsNotNone(area)
+        self.assertEqual(area.attrs["units"], "ha")
+        self.assertEqual(area.sizes["y"], template.sizes["y"])
 
-        with patch.object(mock_clip.return_value.rio, 'reproject_match', return_value=mock_aligned):
-            # Test with default parameters
-            result, area = reproject_match_ds(
-                self.test_raster, self.test_raster)
-            mock_clip.assert_called_once()
-            mock_create_area.assert_called_once()
-
-            # Test without area grid
-            result, area = reproject_match_ds(
-                self.test_raster, self.test_raster, return_area_grid=False)
-            self.assertIsNone(area)
+        _, no_area = reproject_match_ds(
+            self.test_raster, self.test_raster, return_area_grid=False)
+        self.assertIsNone(no_area)
 
 
 class TestCreateProportionGeomMask(unittest.TestCase):
