@@ -56,9 +56,9 @@ def load_config(name: str) -> Dict[str, Any]:
     ``ctreeskit/arraylake_tools/datasets_config``.
 
     Only placeholder/template schemas ship in this public package (e.g.
-    ``"categorical_raster_wtih_x_y_time"``). Real dataset configs reference internal
-    S3 paths and are kept out of this public repo -- they live in the private
-    ``ctrees-products/ctreeskit-internal`` repo. Load those from S3 with
+    ``"categorical_raster_wtih_x_y_time"``). Real dataset configs reference
+    organization-internal S3 paths and are kept out of this public repo -- keep
+    yours in a private config store (e.g. an S3 config registry). Load those with
     :class:`~ctreeskit.arraylake_tools.common.ArraylakeDatasetConfig`, or pass the
     parsed dict straight to :class:`AnnualRasterIngester`.
 
@@ -91,8 +91,8 @@ class AnnualRasterIngester:
     Parameters
     ----------
     config : Dict[str, Any]
-        Dataset configuration dictionary (e.g. ``ciddr_30m_pantropical.json`` in the
-        private ``ctrees-products/ctreeskit-internal`` repo).
+        Dataset configuration dictionary (e.g. ``annual_forest_cover_30m.json``
+        loaded from your organization's private config registry).
     token : Optional[str]
         Arraylake API token. If omitted (and no ``client`` is passed), the client falls
         back to the cached credentials from ``arraylake auth login`` / the
@@ -125,7 +125,10 @@ class AnnualRasterIngester:
         self.bucket_nickname = bucket_nickname
 
         self.dataset_name = config.get("dataset_name")
-        self.organization = config.get("organization", "ctrees")
+        self.organization = config.get("organization")
+        if not self.organization and "repo" not in config:
+            raise ValueError(
+                "dataset config must include 'organization' (or a full 'repo' name)")
         self.repo_name = config.get(
             "repo", f"{self.organization}/{self.dataset_name}")
         self.crs = config.get("crs", "EPSG:4326")
