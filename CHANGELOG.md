@@ -45,6 +45,9 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 - `AnnualRasterIngester` reports progress through a module logger
   (`logging.getLogger("ctreeskit.arraylake_tools.ingest")`) instead of `print`, and
   config-loading errors chain the original exception (`raise ... from e`).
+- `AnnualRasterIngester` no longer falls back to a default Arraylake organization:
+  dataset configs must carry `organization` (or a full `repo` name). **Breaking**
+  for configs that relied on the implicit default.
 
 ### Removed
 - The `dask_analyzer` subpackage (`calculate_categorical_area_stats_dask`,
