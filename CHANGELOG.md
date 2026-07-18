@@ -6,6 +6,22 @@ All notable changes to this project are documented here. Format follows
 
 Versions prior to 0.2.0 were not tracked in this changelog.
 
+## [Unreleased]
+
+### Changed
+- Removed unused core dependencies `scipy`, `cf-xarray`, and `python-dotenv`;
+  `geopandas` moved from core to the `zonal` extra (floor raised to `>=1.0`).
+  **Breaking** for consumers that relied on these installing transitively —
+  declare them directly instead.
+- Removed the `interactive` extra (`ipykernel`, `ipyleaflet`). **Breaking** for
+  consumers installing `ctreeskit[interactive]`.
+- Core dependency floors raised to currently supported releases: `numpy>=2.0`,
+  `pandas>=2.2.2`, `shapely>=2.0.6`, `rioxarray>=0.17.0`.
+- The `zonal` extra installs on all supported Python versions (3.12–3.14): the
+  `sparse` dependency lost its Python upper-bound marker and a `numba>=0.63`
+  floor guarantees a Python-3.14-capable numba. numba caps numpy below 2.5, so
+  environments with this extra resolve numpy to a 2.4.x release.
+
 ## [0.2.0]
 
 ### Added

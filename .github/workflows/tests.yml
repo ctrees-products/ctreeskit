@@ -21,7 +21,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install the project
-        run: uv sync --locked --extra interactive --extra zonal --group dev
+        run: uv sync --locked --extra zonal --group dev
 
       - name: Lint
         run: uv run ruff check .
