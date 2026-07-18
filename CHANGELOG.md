@@ -9,6 +9,10 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 ## [Unreleased]
 
 ### Changed
+- The package type-checks cleanly under mypy, and CI enforces it. Geometry inputs
+  to `process_geometry`, `clip_ds_to_geom`, and `create_proportion_geom_mask` are
+  now typed (and validated) as Shapely `BaseGeometry` objects; other duck-typed
+  geometry objects are rejected with a `ValueError` up front.
 - Removed unused core dependencies `scipy`, `cf-xarray`, and `python-dotenv`;
   `geopandas` moved from core to the `zonal` extra (floor raised to `>=1.0`).
   **Breaking** for consumers that relied on these installing transitively —

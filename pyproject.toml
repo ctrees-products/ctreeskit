@@ -68,10 +68,18 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.6.0",
     "mypy>=1.5.1",
+    "pandas-stubs>=3.0.3.260530",
+    "types-shapely>=2.1.0.20260630",
 ]
 
 [tool.ruff]
 line-length = 100
+
+[tool.mypy]
+# s3fs and rasterio ship no type stubs or py.typed marker.
+[[tool.mypy.overrides]]
+module = ["s3fs", "s3fs.*", "rasterio", "rasterio.*"]
+ignore_missing_imports = true
 
 [project.urls]
 Homepage = "https://github.com/ctrees-products/ctreeskit"

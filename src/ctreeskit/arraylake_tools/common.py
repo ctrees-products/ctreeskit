@@ -299,7 +299,7 @@ class ArraylakeDatasetConfig:
                     var_config = group[var_name]
                     break
 
-            attrs = {}
+            attrs: Dict[str, Any] = {}
             # Link the variable to its grid mapping (rioxarray CF convention).
             if has_grid_mapping:
                 attrs["grid_mapping"] = "spatial_ref"
