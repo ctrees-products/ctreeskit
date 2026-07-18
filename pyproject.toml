@@ -38,7 +38,6 @@ dependencies = [
     "pandas>=2.2.2",
     "shapely>=2.0.6",
     "pyproj>=3.6.1",
-    "s3fs>=2025.3.0",
     "dask>=2025.5.1",
     "arraylake>=1.1.1",
     "icechunk>=2.0.6",
@@ -47,6 +46,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Reading dataset configs and GeoJSON geometries from s3:// paths.
+s3 = [
+    "boto3>=1.34",
+]
 # Coverage-fraction rasterization for geometry-weighted zonal stats, via
 # rasterix (dask-aware wrappers around exactextract). Fully pip-installable.
 # ``sparse`` backs rasterix's exactextract path through numba; numba>=0.63
@@ -76,9 +79,9 @@ dev = [
 line-length = 100
 
 [tool.mypy]
-# s3fs and rasterio ship no type stubs or py.typed marker.
+# boto3 and rasterio ship no type stubs or py.typed marker.
 [[tool.mypy.overrides]]
-module = ["s3fs", "s3fs.*", "rasterio", "rasterio.*"]
+module = ["boto3", "boto3.*", "rasterio", "rasterio.*"]
 ignore_missing_imports = true
 
 [project.urls]

@@ -21,6 +21,12 @@ Versions prior to 0.2.0 were not tracked in this changelog.
   consumers installing `ctreeskit[interactive]`.
 - Core dependency floors raised to currently supported releases: `numpy>=2.0`,
   `pandas>=2.2.2`, `shapely>=2.0.6`, `rioxarray>=0.17.0`.
+- S3 access moved behind a new optional `s3` extra backed by boto3; `s3fs` is no
+  longer a dependency. Loading dataset configs or `s3://` GeoJSON paths raises
+  `ImportError` with install instructions unless `ctreeskit[s3]` is installed;
+  constructing `ArraylakeDatasetConfig` no longer requires any AWS library.
+  **Breaking** for consumers reading from S3 (install the extra) or relying on
+  `s3fs` transitively.
 - The `zonal` extra installs on all supported Python versions (3.12–3.14): the
   `sparse` dependency lost its Python upper-bound marker and a `numba>=0.63`
   floor guarantees a Python-3.14-capable numba. numba caps numpy below 2.5, so

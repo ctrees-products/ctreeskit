@@ -19,6 +19,19 @@ from ctreeskit import (
 )
 
 
+class TestSplitS3Uri(unittest.TestCase):
+    def test_bucket_and_nested_key(self):
+        from ctreeskit._s3 import split_s3_uri
+        self.assertEqual(
+            split_s3_uri("s3://my-bucket/configs/dataset.json"),
+            ("my-bucket", "configs/dataset.json"),
+        )
+
+    def test_bucket_only(self):
+        from ctreeskit._s3 import split_s3_uri
+        self.assertEqual(split_s3_uri("s3://my-bucket"), ("my-bucket", ""))
+
+
 class TestGeometryProcessing(unittest.TestCase):
     def setUp(self):
         # Create a simple polygon

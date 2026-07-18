@@ -54,12 +54,17 @@ See the coverage-fraction example in [docs/xr_analyzer.md](./docs/xr_analyzer.md
 Note: the extra's numba dependency caps numpy below 2.5, so installs with the
 `zonal` extra resolve numpy to a 2.4.x release.
 
+Reading dataset configs or GeoJSON geometries from `s3://` paths requires the
+optional `s3` extra (boto3, using the standard AWS credential chain):
+```bash
+uv sync --extra s3
+```
+
 ## Dependencies
 
 - Python >= 3.12
 - xarray / rioxarray / rasterio (spatial operations)
 - numpy / pandas / shapely / pyproj
-- s3fs (Amazon S3 access)
 - arraylake, icechunk (>=2.0.6), zarr (>=3.1.0) for versioned Icechunk repos
 - dask (chunked array processing)
 

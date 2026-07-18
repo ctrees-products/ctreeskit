@@ -4,7 +4,6 @@ from typing import Union, Optional, List
 
 import numpy as np
 import xarray as xr
-import s3fs
 import pyproj
 from pyproj import Proj, Geod
 from shapely.geometry import box, shape
@@ -12,6 +11,8 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform, unary_union
 from rasterio import features
 from rasterio.enums import Resampling
+
+from .._s3 import s3_client, split_s3_uri
 
 
 class GeometryData:
@@ -81,9 +82,9 @@ def process_geometry(geom_source: GeometrySource,
     """
     if isinstance(geom_source, str):
         if geom_source.startswith("s3://"):
-            fs = s3fs.S3FileSystem()
-            with fs.open(geom_source, 'r') as f:
-                geojson_dict = json.load(f)
+            bucket, key = split_s3_uri(geom_source)
+            response = s3_client().get_object(Bucket=bucket, Key=key)
+            geojson_dict = json.load(response["Body"])
         else:
             with open(geom_source, 'r') as f:
                 geojson_dict = json.load(f)
