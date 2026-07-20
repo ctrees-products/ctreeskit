@@ -247,8 +247,9 @@ class ArraylakeDatasetConfig:
         Updates coordinate variables (x, y, and optionally time) with standard metadata.
         Then iterates over each data variable in the dataset, searching for matching
         variable-specific metadata in the configuration groups. Attribution is added for:
-            - Classification variables with a "values" mapping.
-            - Variables with a defined "unit_name" and associated properties.
+
+        - Classification variables with a "values" mapping.
+        - Variables with a defined "unit_name" and associated properties.
 
         The x/y coordinate metadata is derived from the dataset's *actual* CRS rather
         than hardcoded to longitude/latitude: geographic CRSs get longitude/latitude

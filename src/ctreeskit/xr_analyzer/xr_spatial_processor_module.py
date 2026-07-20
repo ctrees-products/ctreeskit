@@ -423,8 +423,9 @@ def create_area_ds_from_degrees_ds(input_ds:  Union[xr.DataArray, xr.Dataset],
 
     The function computes the area of each grid cell by calculating the distance between
     the cell boundaries. Two methods are available:
-      - High accuracy: uses geodesic distances (via the _measure function).
-      - Low accuracy: uses a projected equal-area approximation (EPSG:6933).
+
+    - High accuracy: geodesic (great-circle) distances.
+    - Low accuracy: a projected equal-area approximation (EPSG:6933).
 
     Parameters
     ----------

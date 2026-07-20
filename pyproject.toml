@@ -63,8 +63,8 @@ zonal = [
     "numba>=0.63",
 ]
 
-# Dev tooling lives in a PEP 735 dependency group (installed with `uv sync --dev`,
-# never shipped in the wheel).
+# Dev and docs tooling live in PEP 735 dependency groups (installed with
+# `uv sync --dev` / `--group docs`), never shipped in the wheel.
 [dependency-groups]
 dev = [
     "pytest>=7.4.0",
@@ -73,6 +73,13 @@ dev = [
     "mypy>=1.5.1",
     "pandas-stubs>=3.0.3.260530",
     "types-shapely>=2.1.0.20260630",
+]
+docs = [
+    "sphinx>=8.1",
+    "furo>=2024.8.6",
+    "myst-parser>=4.0",
+    "sphinx-autodoc-typehints>=2.5",
+    "sphinx-copybutton>=0.5.2",
 ]
 
 [tool.ruff]
@@ -87,7 +94,7 @@ ignore_missing_imports = true
 [project.urls]
 Homepage = "https://github.com/ctrees-products/ctreeskit"
 Repository = "https://github.com/ctrees-products/ctreeskit.git"
-Documentation = "https://github.com/ctrees-products/ctreeskit#readme"
+Documentation = "https://ctreeskit.readthedocs.io"
 "Bug Tracker" = "https://github.com/ctrees-products/ctreeskit/issues"
 
 [tool.pytest.ini_options]
