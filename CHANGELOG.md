@@ -8,6 +8,14 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 
 ## [Unreleased]
 
+### Added
+- Public documentation site built with Sphinx + Furo and hosted on Read the Docs
+  ([ctreeskit.readthedocs.io](https://ctreeskit.readthedocs.io)): narrative guides
+  for spatial processing, zonal statistics, and Icechunk ingestion, plus an API
+  reference generated from the docstrings with intersphinx links into xarray,
+  numpy, and the rest of the stack. Added a `docs` dependency group and a CI job
+  that builds the docs with warnings treated as errors.
+
 ### Changed
 - The package type-checks cleanly under mypy, and CI enforces it. Geometry inputs
   to `process_geometry`, `clip_ds_to_geom`, and `create_proportion_geom_mask` are

@@ -1,0 +1,19 @@
+# Read the Docs configuration. https://docs.readthedocs.io/en/stable/config-file/v2.html
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+
+sphinx:
+  configuration: docs/conf.py
+
+# Native uv support installs the project plus the `docs` dependency group from
+# pyproject.toml + uv.lock. https://about.readthedocs.com/blog/2026/04/uv-native-support/
+python:
+  install:
+    - method: uv
+      command: sync
+      groups:
+        - docs

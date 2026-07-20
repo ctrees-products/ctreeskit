@@ -31,3 +31,22 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.27"
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install the project
+        run: uv sync --locked --group docs
+
+      # -W turns docstring/reST/reference warnings into build failures.
+      - name: Build docs
+        run: uv run sphinx-build -W -b html docs docs/_build/html
