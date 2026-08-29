@@ -15,7 +15,7 @@ The `arraylake_tools` package provides utilities for ingesting raster data into 
 
 ### Dataset Configuration
 
-The `ArraylakeDatasetConfig` class loads a dataset configuration (from an S3 bucket of configs, or a dict passed directly) and adds CF-compliant metadata — coordinate attributes, `flag_values`/`flag_meanings` for classification variables, grid-mapping links — to an xarray Dataset.
+The `ArraylakeDatasetConfig` class loads a dataset configuration (from an S3 bucket of configs — requires the optional `s3` extra — or a dict passed directly) and adds CF-compliant metadata — coordinate attributes, `flag_values`/`flag_meanings` for classification variables, grid-mapping links — to an xarray Dataset.
 
 ```python
 from ctreeskit import ArraylakeDatasetConfig

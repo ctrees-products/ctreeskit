@@ -29,7 +29,7 @@ service wrappers only need to load a config and call these methods.
 import json
 import logging
 from importlib import resources
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 # Third-party library imports
 import numpy as np
@@ -236,22 +236,25 @@ class AnnualRasterIngester:
             The snapshot id of the initialization commit.
         """
         years = self._years()
-        if not years:
+        time_cfg = self.time_config
+        if not years or time_cfg is None:
             raise ValueError("time config is required to initialize an annual schema")
         template_year = template_year or years[0]
 
         # Read only the grid from the template mosaic (coordinates are derived from the
-        # geotransform, so this does not read pixel data).
-        template = rioxarray.open_rasterio(self._year_uri(template_year), masked=False)
+        # geotransform, so this does not read pixel data). A single-band GeoTIFF opens
+        # as a DataArray.
+        template = cast(xr.DataArray, rioxarray.open_rasterio(
+            self._year_uri(template_year), masked=False))
         template = template.squeeze("band", drop=True)
         x = template.x.values
         y = template.y.values
         template.close()
 
         time = pd.date_range(
-            start=self.time_config["start"],
-            end=self.time_config["end"],
-            freq=self.time_config.get("freq", "YS"),
+            start=time_cfg["start"],
+            end=time_cfg["end"],
+            freq=time_cfg.get("freq", "YS"),
         )
 
         shape = (len(time), len(y), len(x))
@@ -332,15 +335,16 @@ class AnnualRasterIngester:
         # Open the year's mosaic (subset first when a bbox is given, then chunk).
         ychunk = self.chunks.get("y", 2000)
         xchunk = self.chunks.get("x", 2000)
+        # A single-band GeoTIFF opens as a DataArray.
         if bbox is None:
-            da_year = rioxarray.open_rasterio(
+            da_year = cast(xr.DataArray, rioxarray.open_rasterio(
                 self._year_uri(year), masked=False,
                 chunks={"band": 1, "y": ychunk, "x": xchunk}, lock=False,
-            ).squeeze("band", drop=True)
+            )).squeeze("band", drop=True)
         else:
-            da_year = rioxarray.open_rasterio(
+            da_year = cast(xr.DataArray, rioxarray.open_rasterio(
                 self._year_uri(year), masked=False,
-            ).squeeze("band", drop=True)
+            )).squeeze("band", drop=True)
             minx, miny, maxx, maxy = bbox
             # y is north-up (descending), so slice high -> low.
             da_year = da_year.sel(x=slice(minx, maxx), y=slice(maxy, miny))

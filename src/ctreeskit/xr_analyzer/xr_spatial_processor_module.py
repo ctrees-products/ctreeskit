@@ -1,22 +1,18 @@
 import json
 import warnings
-from typing import Union, Optional, List, Protocol
+from typing import Union, Optional, List
 
 import numpy as np
 import xarray as xr
-import s3fs
 import pyproj
 from pyproj import Proj, Geod
 from shapely.geometry import box, shape
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform, unary_union
 from rasterio import features
 from rasterio.enums import Resampling
 
-# A simple protocol to type-check geometry-like objects.
-
-
-class GeometryLike(Protocol):
-    geom_type: str
+from .._s3 import s3_client, split_s3_uri
 
 
 class GeometryData:
@@ -25,8 +21,8 @@ class GeometryData:
 
     Attributes
     ----------
-    geom : Optional[List[GeometryLike]]
-         List of geometry objects (usually Shapely geometries).
+    geom : Optional[List[BaseGeometry]]
+         List of Shapely geometry objects.
     geom_crs : Optional[str]
          Coordinate reference system as an EPSG string (e.g., "EPSG:4326").
     geom_bbox : Optional[tuple]
@@ -34,12 +30,12 @@ class GeometryData:
     geom_area : Optional[float]
          Area of the geometry (in m² or ha, depending on conversion).
     """
-    geom: Optional[List[GeometryLike]]
+    geom: Optional[List[BaseGeometry]]
     geom_crs: Optional[str]
     geom_bbox: Optional[tuple]
     geom_area: Optional[float]
 
-    def __init__(self, geom: Optional[List[GeometryLike]] = None,
+    def __init__(self, geom: Optional[List[BaseGeometry]] = None,
                  geom_crs: Optional[str] = None,
                  geom_bbox: Optional[tuple] = None,
                  geom_area: Optional[float] = None):
@@ -49,27 +45,26 @@ class GeometryData:
         self.geom_area = geom_area
 
 
-GeometrySource = Union[str, "GeometryLike", List["GeometryLike"]]
-ExtendedGeometryInput = Union["GeometryData", GeometrySource,
-                              List[Union["GeometryData", "GeometryLike"]]]
+GeometrySource = Union[str, BaseGeometry, List[BaseGeometry]]
+ExtendedGeometryInput = Union["GeometryData", GeometrySource]
 
 
 def process_geometry(geom_source: GeometrySource,
-                     dissolve: bool = True, output_in_ha=True):
+                     dissolve: bool = True, output_in_ha=True) -> GeometryData:
     """
     Load, validate, and process a geometry source into a standardized GeometryData object.
 
     The geom_source may be one of:
       - A file path (local or S3 URI) pointing to a GeoJSON file.
-      - A single geometry (that implements the 'geom_type' attribute).
-      - A list of geometries.
+      - A single Shapely geometry.
+      - A list of Shapely geometries.
 
     If dissolve is True the geometries are merged into a single object and the bounding box is computed
     accordingly.
 
     Parameters
     ----------
-    geom_source : str or GeometryLike or list of GeometryLike
+    geom_source : str or BaseGeometry or list of BaseGeometry
          The input geometry source.
     dissolve : bool, default True
          If True, all geometries are dissolved into a single geometry.
@@ -85,14 +80,11 @@ def process_geometry(geom_source: GeometrySource,
              - geom_bbox: the bounding box (minx, miny, maxx, maxy)
              - geom_area: the computed area (converted if output_in_ha is True)
     """
-    geometries = None
-    crs = None
-
     if isinstance(geom_source, str):
         if geom_source.startswith("s3://"):
-            fs = s3fs.S3FileSystem()
-            with fs.open(geom_source, 'r') as f:
-                geojson_dict = json.load(f)
+            bucket, key = split_s3_uri(geom_source)
+            response = s3_client().get_object(Bucket=bucket, Key=key)
+            geojson_dict = json.load(response["Body"])
         else:
             with open(geom_source, 'r') as f:
                 geojson_dict = json.load(f)
@@ -104,10 +96,10 @@ def process_geometry(geom_source: GeometrySource,
             'properties', {}).get('name', None)
         if crs is None:
             crs = "EPSG:4326"
-    elif isinstance(geom_source, list) and all(hasattr(g, 'geom_type') for g in geom_source):
+    elif isinstance(geom_source, list) and all(isinstance(g, BaseGeometry) for g in geom_source):
         geometries = geom_source
         crs = "EPSG:4326"  # default CRS
-    elif hasattr(geom_source, 'geom_type'):
+    elif isinstance(geom_source, BaseGeometry):
         geometries = [geom_source]
         crs = "EPSG:4326"
     else:
@@ -218,11 +210,15 @@ def clip_ds_to_geom(input_ds: Union[xr.DataArray, xr.Dataset], geom_source: Exte
     xr.DataArray
          Raster clipped to the geometry’s spatial extent. Areas outside the geometry are set to 0 or NaN.
     """
-    if not isinstance(geom_source, GeometryData):
-        geom_source = process_geometry(geom_source, True)
-    geom = geom_source.geom
-    bbox = geom_source.geom_bbox
-    crs = geom_source.geom_crs
+    if isinstance(geom_source, GeometryData):
+        geom_data = geom_source
+    else:
+        geom_data = process_geometry(geom_source, True)
+    geom = geom_data.geom
+    bbox = geom_data.geom_bbox
+    crs = geom_data.geom_crs
+    if geom is None or bbox is None:
+        raise ValueError("geom_source carries no geometries or bounding box")
 
     # Prepare spatial subset if needed
     spatial_raster = clip_ds_to_bbox(input_ds, bbox)
@@ -341,12 +337,14 @@ def create_proportion_geom_mask(input_ds: xr.DataArray, geom_source: ExtendedGeo
          A 2-D DataArray mask on the clipped grid where each pixel value (between 0 and 1) represents the
          fraction of that pixel's area that intersects the geometry. Pixels with no intersection return 0.
     """
-    if not isinstance(geom_source, GeometryData):
-        geom_source = process_geometry(geom_source, True)
+    if isinstance(geom_source, GeometryData):
+        geom_data = geom_source
+    else:
+        geom_data = process_geometry(geom_source, True)
 
     # All intersection math happens in the raster's CRS on the clipped grid.
-    geoms = _geoms_in_crs(geom_source, input_ds.rio.crs)
-    clipped_raster = clip_ds_to_geom(input_ds, geom_source, all_touch=True)
+    geoms = _geoms_in_crs(geom_data, input_ds.rio.crs)
+    clipped_raster = clip_ds_to_geom(input_ds, geom_data, all_touch=True)
     clipped_transform = clipped_raster.rio.transform()
     pixel_size = abs(clipped_transform.a * clipped_transform.e)
     grid_shape = (clipped_raster.sizes["y"], clipped_raster.sizes["x"])
@@ -387,9 +385,11 @@ def create_proportion_geom_mask(input_ds: xr.DataArray, geom_source: ExtendedGeo
                             'Pixel intersection proportions (0-1)')
 
 
-def _geoms_in_crs(geom_source: GeometryData, raster_crs) -> List:
+def _geoms_in_crs(geom_source: GeometryData, raster_crs) -> List[BaseGeometry]:
     """The source geometries expressed in the raster's CRS."""
     geoms = geom_source.geom
+    if geoms is None:
+        raise ValueError("geom_source carries no geometries")
     if raster_crs is None or geom_source.geom_crs is None:
         return geoms
     source_crs = pyproj.CRS.from_user_input(geom_source.geom_crs)

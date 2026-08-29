@@ -32,39 +32,35 @@ authors = [
 # together; loosening any one of them reintroduces the old-icechunk incompatibility.
 dependencies = [
     "xarray>=2025.7.1",
-    "rioxarray>=0.15.0",
+    "rioxarray>=0.17.0",
     "rasterio>=1.4.3",
-    "numpy>=1.26.2",
-    "pandas>=2.1.4",
-    "geopandas>=0.14.1",
-    "shapely>=2.0.2",
+    "numpy>=2.0",
+    "pandas>=2.2.2",
+    "shapely>=2.0.6",
     "pyproj>=3.6.1",
-    "scipy>=1.7.3",
-    "s3fs>=2025.3.0",
-    "cf_xarray>=0.10.0",
     "dask>=2025.5.1",
     "arraylake>=1.1.1",
     "icechunk>=2.0.6",
     "zarr>=3.1.0",
-    "python-dotenv>=1.0.0",
     "flox>=0.11.2",
 ]
 
 [project.optional-dependencies]
-# Notebook / interactive visualisation.
-interactive = [
-    "ipykernel>=6.27.1",
-    "ipyleaflet>=0.17.4",
+# Reading dataset configs and GeoJSON geometries from s3:// paths.
+s3 = [
+    "boto3>=1.34",
 ]
 # Coverage-fraction rasterization for geometry-weighted zonal stats, via
 # rasterix (dask-aware wrappers around exactextract). Fully pip-installable.
-# ``sparse`` (required by rasterix's exactextract backend) depends on numba,
-# which does not support Python 3.14 yet -- on 3.14 the extra installs but the
-# coverage backend is unavailable.
+# ``sparse`` backs rasterix's exactextract path through numba; numba>=0.63
+# supports Python 3.14 but caps numpy below 2.5, so installs with this extra
+# resolve numpy to a 2.4.x release.
 zonal = [
     "rasterix>=0.2.2",
     "exactextract>=0.3.0",
-    "sparse>=0.15; python_version < '3.14'",
+    "geopandas>=1.0",
+    "sparse>=0.15",
+    "numba>=0.63",
 ]
 
 # Dev tooling lives in a PEP 735 dependency group (installed with `uv sync --dev`,
@@ -75,10 +71,18 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.6.0",
     "mypy>=1.5.1",
+    "pandas-stubs>=3.0.3.260530",
+    "types-shapely>=2.1.0.20260630",
 ]
 
 [tool.ruff]
 line-length = 100
+
+[tool.mypy]
+# boto3 and rasterio ship no type stubs or py.typed marker.
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "rasterio", "rasterio.*"]
+ignore_missing_imports = true
 
 [project.urls]
 Homepage = "https://github.com/ctrees-products/ctreeskit"

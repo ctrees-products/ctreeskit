@@ -6,6 +6,32 @@ All notable changes to this project are documented here. Format follows
 
 Versions prior to 0.2.0 were not tracked in this changelog.
 
+## [Unreleased]
+
+### Changed
+- The package type-checks cleanly under mypy, and CI enforces it. Geometry inputs
+  to `process_geometry`, `clip_ds_to_geom`, and `create_proportion_geom_mask` are
+  now typed (and validated) as Shapely `BaseGeometry` objects; other duck-typed
+  geometry objects are rejected with a `ValueError` up front.
+- Removed unused core dependencies `scipy`, `cf-xarray`, and `python-dotenv`;
+  `geopandas` moved from core to the `zonal` extra (floor raised to `>=1.0`).
+  **Breaking** for consumers that relied on these installing transitively —
+  declare them directly instead.
+- Removed the `interactive` extra (`ipykernel`, `ipyleaflet`). **Breaking** for
+  consumers installing `ctreeskit[interactive]`.
+- Core dependency floors raised to currently supported releases: `numpy>=2.0`,
+  `pandas>=2.2.2`, `shapely>=2.0.6`, `rioxarray>=0.17.0`.
+- S3 access moved behind a new optional `s3` extra backed by boto3; `s3fs` is no
+  longer a dependency. Loading dataset configs or `s3://` GeoJSON paths raises
+  `ImportError` with install instructions unless `ctreeskit[s3]` is installed;
+  constructing `ArraylakeDatasetConfig` no longer requires any AWS library.
+  **Breaking** for consumers reading from S3 (install the extra) or relying on
+  `s3fs` transitively.
+- The `zonal` extra installs on all supported Python versions (3.12–3.14): the
+  `sparse` dependency lost its Python upper-bound marker and a `numba>=0.63`
+  floor guarantees a Python-3.14-capable numba. numba caps numpy below 2.5, so
+  environments with this extra resolve numpy to a 2.4.x release.
+
 ## [0.2.0]
 
 ### Added

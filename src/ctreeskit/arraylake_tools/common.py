@@ -3,10 +3,11 @@ import json
 from typing import Optional, Dict, Any
 
 # Third-party library imports
-import s3fs
 import numpy as np
 import xarray as xr
 import pyproj
+
+from .._s3 import s3_client
 
 
 class ArraylakeDatasetConfig:
@@ -55,7 +56,6 @@ class ArraylakeDatasetConfig:
         config_prefix : str
             Path prefix inside the S3 bucket for configuration files (default: "configs/").
         """
-        self.s3 = s3fs.S3FileSystem()
         self.bucket = bucket
         self.config_prefix = config_prefix
         self._config: Dict[str, Any] = {}
@@ -88,11 +88,14 @@ class ArraylakeDatasetConfig:
         ------
         ValueError
             If the configuration could not be loaded (e.g., due to a ClientError).
+        ImportError
+            If the optional ``s3`` extra is not installed.
         """
-        key = f"{self.bucket}/{self.config_prefix}{dataset_name}.json"
+        client = s3_client()
+        key = f"{self.config_prefix}{dataset_name}.json"
         try:
-            with self.s3.open(key, 'r') as f:
-                self._config = json.load(f)
+            response = client.get_object(Bucket=self.bucket, Key=key)
+            self._config = json.load(response["Body"])
             return self._config
         except Exception as e:
             raise ValueError(
@@ -114,13 +117,18 @@ class ArraylakeDatasetConfig:
         ------
         ValueError
             If there is an error during listing (e.g., S3 access issues).
+        ImportError
+            If the optional ``s3`` extra is not installed.
         """
+        client = s3_client()
         try:
-            files = self.s3.ls(f"{self.bucket}/{self.config_prefix}")
+            paginator = client.get_paginator("list_objects_v2")
             return [
-                file.split('/')[-1].replace('.json', '')
-                for file in files
-                if file.endswith('.json')
+                obj["Key"].split("/")[-1].removesuffix(".json")
+                for page in paginator.paginate(
+                    Bucket=self.bucket, Prefix=self.config_prefix)
+                for obj in page.get("Contents", [])
+                if obj["Key"].endswith(".json")
             ]
         except Exception as e:
             raise ValueError(f"Could not list datasets: {e}") from e
@@ -299,7 +307,7 @@ class ArraylakeDatasetConfig:
                     var_config = group[var_name]
                     break
 
-            attrs = {}
+            attrs: Dict[str, Any] = {}
             # Link the variable to its grid mapping (rioxarray CF convention).
             if has_grid_mapping:
                 attrs["grid_mapping"] = "spatial_ref"

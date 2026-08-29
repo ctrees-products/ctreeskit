@@ -21,10 +21,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install the project
-        run: uv sync --locked --extra interactive --extra zonal --group dev
+        run: uv sync --locked --extra zonal --extra s3 --group dev
 
       - name: Lint
         run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy src/ctreeskit
 
       - name: Run tests
         run: uv run pytest tests/
