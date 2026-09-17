@@ -508,6 +508,8 @@ class AnnualRasterIngester:
     def _steps(delta: float, res: float, what: str) -> int:
         """Number of whole cells in ``delta``; raises if not a whole number."""
         n = delta / res
+        if abs(n) < 1e-3:
+            n = 0.0
         if abs(n - round(n)) > 1e-6 * max(1.0, abs(n)):
             raise ValueError(
                 f"{what} {delta!r} is not a whole number of cells at resolution "
@@ -571,7 +573,11 @@ class AnnualRasterIngester:
         resx, resy = self._resolution(x_old, y_old)
         left, bottom, right, top = self._edges(x_old, y_old)
         minx, miny, maxx, maxy = (float(v) for v in extent)
-        if minx > left or miny > bottom or maxx < right or maxy < top:
+        # Edges are regenerated from cell centres, so allow float noise well below
+        # a cell before calling the request a shrink.
+        tolx, toly = resx * 1e-3, resy * 1e-3
+        if (minx > left + tolx or miny > bottom + toly
+                or maxx < right - tolx or maxy < top - toly):
             raise ValueError(
                 f"new extent {tuple(extent)} does not contain the stored extent "
                 f"{(left, bottom, right, top)}; grow_extent only enlarges the domain.")

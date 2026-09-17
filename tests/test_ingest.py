@@ -322,6 +322,13 @@ class TestAnnualRasterIngesterEndToEnd(unittest.TestCase):
         self.assertTrue((arr.isel(time=0).values[20:, :] == self.NODATA).all())
         self.assertTrue((arr.isel(time=0).values[:, 20:] == self.NODATA).all())
 
+    def test_grow_extent_tolerates_float_noise_on_unchanged_edges(self):
+        self.ingester.initialize_schema()
+        # right/bottom edges given with sub-cell float noise must not count as shrink
+        self.ingester.grow_extent((-60.0, 9.8 + 3e-13, -59.8 - 6e-13, 10.1),
+                                  verify_samples=0)
+        self.assertEqual(self._stored()["classification"].shape, (2, 30, 20))
+
     def test_grow_extent_rejects_shrink_and_off_lattice(self):
         self.ingester.initialize_schema()
         with self.assertRaises(ValueError):
