@@ -19,6 +19,48 @@ Versions prior to 0.2.0 were not tracked in this changelog.
   configs sizes the grid at `initialize_schema`; the template raster must sit on
   that lattice.
 - `AnnualRasterIngester(group=...)` selects a group from multi-group configs.
+- `xr_analyzer.xr_vectorize_module`: turns categorical change layers into vector
+  patches and events. `patches_from_mask`, `patches_from_categorical` and
+  `patches_over_time` polygonize connected pixel regions into a GeoDataFrame
+  carrying `patch_id`, `pixel_count` and true `area_ha` (per-cell geodesic or
+  equal-area measurement on lat/lon grids, transform-derived on metre-based
+  projected grids), with a minimum-mapping-unit filter applied to measured area.
+  `merge_patches` groups patches within a metric gap into events — buffering in a
+  projected CRS, never in degrees — and returns the events plus a membership
+  table. `assign_to_polygons` produces a many-to-many overlap table against
+  reference polygons. `write_geoparquet` / `read_geoparquet` round-trip either
+  table as GeoParquet 1.0.0 with the CRS recorded.
+- Optional `vector` extra (geopandas, pyarrow) backing the vector output. The
+  module imports without it; the functions that need it raise `ImportError` with
+  install instructions.
+- `xr_analyzer.xr_observations_module`: one observation record for detection
+  layers from unlike sources. `OBSERVATION_FIELDS` fixes the normalized
+  variables and dtypes — state (`STATE_CODES`), first/confirm/last observation
+  dates, look and positive counts, native and rescaled confidence, class hint
+  and date precision (`DATE_PRECISION`) — with `source`, `sensor`,
+  `pixel_size_m`, `snapshot_id`, `read_at`, `has_counts` and the CRS on the
+  dataset. Three adapters read onto it, always on the source grid and never
+  resampling: `observations_from_dated_codes` decodes a 2-D raster of dated
+  state codes chunk by chunk on dask-backed input;
+  `observations_from_annual_alert_days` decodes annual slices carrying a
+  per-pixel day value, keeping the `time` dimension because a pixel may alert in
+  more than one year, with `select_month` selecting one calendar month; and
+  `observations_from_points` brings a point table on directly, rescaling
+  categorical or numeric confidence to [0, 1], with `points_to_grid_mask`
+  rasterizing it onto a reference grid.
+- `observations_to_table` flattens a record to one row per detected pixel —
+  identical columns and dtypes whatever the adapter, so records concatenate —
+  and `write_observations` / `read_observations` round-trip it as Parquet.
+  `observations_mask` reduces a record to the boolean mask `patches_from_mask`
+  takes, optionally filtered to one month, joining observations to patches and
+  events.
+- `observations_from_tier_steps` normalizes a regularly stepped categorical
+  layer that writes each pixel at one step only: `tier_map` routes the layer's
+  own tier vocabulary onto the shared states, the step coordinate supplies the
+  date, and the step dimension collapses to a 2-D record. A pixel written at
+  more than one step keeps its latest write and is flagged `multi_step`.
+  `observations_from_tier_steps_by_step` keeps the steps for per-step masks,
+  with `select_step_month` selecting one calendar month.
 
 ### Changed
 - `ingest_year` places every source on the stored grid by coordinate. A source
