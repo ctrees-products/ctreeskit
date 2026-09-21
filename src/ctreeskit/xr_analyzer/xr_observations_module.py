@@ -480,7 +480,8 @@ def observations_from_dated_codes(
             )
         band_to_state[offset // band_width] = int(table[name])
         if name in hints:
-            class_by_band[offset // band_width] = int(hints[name])
+            class_by_band[offset // band_width] = _check_hint(
+                hints[name], f"class_hint_map[{name!r}]")
 
     confirmed_state = table.get("confirmed")
 
@@ -639,7 +640,9 @@ def observations_from_annual_alert_days(
     class_hint = _constant(state, 0, "uint8")
     for alert_value, hint in (class_hint_map or {}).items():
         class_hint = xr.where(
-            detected & (alert == alert_value), int(hint), class_hint
+            detected & (alert == alert_value),
+            _check_hint(hint, f"class_hint_map[{alert_value!r}]"),
+            class_hint,
         ).astype("uint8")
 
     if pixel_size_m is None:
@@ -811,9 +814,11 @@ def observations_from_points(
     if class_col is None:
         class_hint = np.zeros(n, dtype="int64")
     else:
-        class_hint = (
-            df[class_col].map(class_hint_map or {}).fillna(0).astype("int64").to_numpy()
-        )
+        hints = {
+            key: _check_hint(value, f"class_hint_map[{key!r}]")
+            for key, value in (class_hint_map or {}).items()
+        }
+        class_hint = df[class_col].map(hints).fillna(0).astype("int64").to_numpy()
 
     table = pd.DataFrame(
         {
@@ -952,6 +957,18 @@ def _normalize_tier_map(tier_map: Mapping[int, str | int]) -> dict[int, int]:
                 )
             resolved[int(value)] = code
     return resolved
+
+
+def _check_hint(value: Any, what: str = "class hint") -> int:
+    """Return ``value`` as an int after checking it fits the uint8 ``class_hint`` field.
+
+    ``numpy`` wraps out-of-range values on cast (300 becomes 44), which would
+    record a different, wrong hint without warning.
+    """
+    hint = int(value)
+    if not 0 <= hint <= 255:
+        raise ValueError(f"{what} {value!r} is outside the uint8 range 0..255.")
+    return hint
 
 
 def _step_dates(da: xr.DataArray, time_dim: str) -> np.ndarray:
@@ -1143,7 +1160,7 @@ def observations_from_tier_steps(
             "step_dates": step_dates,
             "confirmed_state": STATE_CODES.get("confirmed"),
             "base_precision": DATE_PRECISION[date_precision],
-            "class_hint": int(class_hint),
+            "class_hint": _check_hint(class_hint),
         },
         output_core_dims=[[], [], [], [], [], []],
         dask="parallelized",
@@ -1230,7 +1247,8 @@ def observations_from_tier_steps_by_step(
             f"got {date_precision!r}"
         )
     mapping = _normalize_tier_map(tier_map)
-    _step_dates(da, time_dim)
+    step_dates = _step_dates(da, time_dim)
+    class_hint = _check_hint(class_hint)
 
     state, written = xr.apply_ufunc(
         _tier_state_block,
@@ -1244,7 +1262,7 @@ def observations_from_tier_steps_by_step(
         output_dtypes=["uint8", "bool"],
     )
 
-    times = da[time_dim].astype("datetime64[ns]")
+    times = xr.DataArray(step_dates, dims=[time_dim], coords={time_dim: da[time_dim]})
     first = xr.where(written, times, _NAT).astype("datetime64[ns]")
     confirm = xr.where(state == STATE_CODES["confirmed"], first, _NAT).astype(
         "datetime64[ns]"

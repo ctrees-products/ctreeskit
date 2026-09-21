@@ -195,6 +195,33 @@ class TestOverTime:
         with pytest.raises(ValueError, match="not a dimension"):
             patches_over_time(self._cube(), 1, time_dim="year")
 
+    def test_attrs_reach_every_step(self):
+        patches = patches_over_time(self._cube(), 1, attrs={"layer": "demo"})
+        assert list(patches["layer"]) == ["demo"] * 4
+
+    def test_datetime_coordinates_become_timestamps(self):
+        cube = self._cube().assign_coords(
+            time=pd.to_datetime(["2021-01-01", "2022-01-01", "2023-01-01"])
+            .astype("datetime64[ns]")
+        )
+        patches = patches_over_time(cube, 1)
+        assert all(isinstance(t, pd.Timestamp) for t in patches["time"])
+        assert list(patches["time"].dt.year) == [2021, 2022, 2022, 2023]
+
+    def test_area_grid_is_measured_once_and_shared(self):
+        cube = self._cube()
+        per_step = patches_over_time(cube, 1)
+        single = patches_from_categorical(
+            cube.isel(time=1).rio.write_crs(cube.rio.crs), 1)
+        # step 2 areas equal what a standalone measurement of that step gives
+        np.testing.assert_allclose(
+            per_step.loc[per_step["time"] == 2022, "area_ha"].to_numpy(),
+            single["area_ha"].to_numpy(),
+        )
+        with pytest.raises(ValueError, match="shape"):
+            patches_from_mask(_projected_raster(np.ones((4, 4), dtype="uint8")),
+                              area_ha_grid=np.ones((3, 3)))
+
     def test_only_one_step_is_materialized_at_a_time(self, monkeypatch):
         """The per-step helper must only ever see a single 2-D slice.
 
@@ -371,6 +398,23 @@ class TestAssignToPolygons:
         events = self._straddling_event()
         with pytest.raises(ValueError, match="no 'missing' column"):
             assign_to_polygons(events, self._split_polygons(events), polygon_id="missing")
+
+
+class TestAssignToPolygonsGeometryName:
+    def test_renamed_geometry_columns_are_accepted(self):
+        events = gpd.GeoDataFrame(
+            {"event_id": [1]}, geometry=[box(500000, 3999900, 500100, 4000000)],
+            crs="EPSG:32633",
+        ).rename_geometry("geom")
+        polygons = gpd.GeoDataFrame(
+            {"pid": ["a", "b"]},
+            geometry=[box(500000, 3999900, 500050, 4000000),
+                      box(500050, 3999900, 500100, 4000000)],
+            crs="EPSG:32633",
+        ).rename_geometry("footprint")
+        table = assign_to_polygons(events, polygons, polygon_id="pid")
+        assert sorted(table["pid"]) == ["a", "b"]
+        np.testing.assert_allclose(table["overlap_frac"].sum(), 1.0, rtol=1e-5)
 
 
 class TestGeoParquetRoundTrip:

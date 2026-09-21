@@ -265,6 +265,9 @@ Polygonize the connected regions of a 2-D boolean or integer raster.
 - `min_area_ha` (float, optional): minimum mapping unit, applied to measured area.
 - `fill_value` (optional): value marking nodata, treated as background.
 - `attrs` (dict, optional): constant columns broadcast onto every row.
+- `area_ha_grid` (ndarray, optional): per-pixel hectares for the grid, shaped
+  like the mask. Measured from the CRS and transform when omitted; pass it to
+  reuse one measurement across layers on the same grid.
 
 **Returns:** a `GeoDataFrame` with `patch_id`, `pixel_count`, `area_ha`,
 `geometry` and any `attrs` keys, carrying the raster's CRS.
@@ -277,7 +280,9 @@ the matched value(s) in a `class_values` column.
 ### `patches_over_time`
 
 Iterates a time dimension (`time_dim`, default `"time"`), polygonizing one step
-at a time and concatenating the result with a `time` column.
+at a time and concatenating the result with a `time` column (a
+`pandas.Timestamp` for datetime coordinates). The per-pixel area grid is
+measured once and shared by every step.
 
 ### `merge_patches`
 
@@ -286,7 +291,10 @@ within matching `group_by` columns.
 
 **Returns:** `(events, membership)`. `events` carries `event_id`, `area_ha`,
 `patch_count`, `pixel_count`, the `group_by` columns and the dissolved member
-geometry; `membership` is an `event_id, patch_id` table.
+geometry; `membership` is an `event_id, patch_id` table. `area_ha` is the sum
+of member areas, not a remeasurement, so patches that overlap in space (the
+same location in several time steps merged without `group_by=["time"]`) count
+once per patch.
 
 ### `assign_to_polygons`
 

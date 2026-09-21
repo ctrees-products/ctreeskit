@@ -8,6 +8,8 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-21
+
 ### Added
 - `AnnualRasterIngester.grow_extent(extent=None)` enlarges a stored `(time, y, x)`
   domain without rewriting pixels: zarr resize plus Icechunk `shift_array` for

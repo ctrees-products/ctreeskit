@@ -122,6 +122,7 @@ def patches_from_mask(
     min_area_ha: float | None = None,
     fill_value: Any = None,
     attrs: dict | None = None,
+    area_ha_grid: np.ndarray | None = None,
 ) -> "GeoDataFrame":
     """Polygonize connected regions of a raster mask into patches.
 
@@ -146,6 +147,10 @@ def patches_from_mask(
     attrs : dict, optional
         Constant columns broadcast onto every row, for example a layer name, a
         class value, or a time step.
+    area_ha_grid : numpy.ndarray, optional
+        Per-pixel area in hectares for the grid ``mask`` sits on, shaped like
+        ``mask``. Computed from the CRS and transform when omitted; pass it to
+        reuse one measurement across many layers on the same grid.
 
     Returns
     -------
@@ -210,7 +215,13 @@ def patches_from_mask(
         flat = labels.ravel()
         n_bins = len(geometries) + 1
         columns["pixel_count"] = np.bincount(flat, minlength=n_bins)[1:].astype("int64")
-        area_ha_grid = _pixel_area_ha(mask, crs)
+        if area_ha_grid is None:
+            area_ha_grid = _pixel_area_ha(mask, crs)
+        elif np.shape(area_ha_grid) != bool_mask.shape:
+            raise ValueError(
+                f"area_ha_grid shape {np.shape(area_ha_grid)} does not match the "
+                f"mask shape {bool_mask.shape}."
+            )
         columns["area_ha"] = np.bincount(
             flat, weights=area_ha_grid.ravel(), minlength=n_bins
         )[1:]
@@ -243,7 +254,7 @@ def patches_from_categorical(
         Class value(s) to select. Pixels matching any of them form the mask.
     **kwargs
         Passed through to :func:`patches_from_mask` (``connectivity``,
-        ``min_area_ha``, ``attrs``).
+        ``min_area_ha``, ``attrs``, ``area_ha_grid``).
 
     Returns
     -------
@@ -274,7 +285,8 @@ def patches_over_time(
     """Polygonize a categorical raster one time step at a time.
 
     Each step is selected and materialized on its own, so a lazily backed cube
-    is never loaded in full.
+    is never loaded in full. The per-pixel area grid is measured once and shared
+    by every step.
 
     Parameters
     ----------
@@ -292,8 +304,9 @@ def patches_over_time(
     -------
     geopandas.GeoDataFrame
         All steps concatenated, with a ``time`` column holding the coordinate
-        value of the step each patch came from and ``patch_id`` unique across
-        the whole result.
+        value of the step each patch came from (a :class:`pandas.Timestamp`
+        for datetime coordinates) and ``patch_id`` unique across the whole
+        result.
 
     Raises
     ------
@@ -306,16 +319,23 @@ def patches_over_time(
         raise ValueError(f"'{time_dim}' is not a dimension of the input ({da.dims}).")
 
     crs = da.rio.crs
+    if crs is None:
+        raise ValueError("input has no CRS. Set one with `da.rio.write_crs(...)` first.")
     transform = da.rio.transform()
+    base_attrs = dict(kwargs.pop("attrs", None) or {})
+    area_ha_grid = kwargs.pop("area_ha_grid", None)
     frames = []
     for i in range(da.sizes[time_dim]):
         step = da.isel({time_dim: i})
         step = step.compute()
         step.rio.write_crs(crs, inplace=True)
         step.rio.write_transform(transform, inplace=True)
-        attrs = dict(kwargs.pop("attrs", None) or {})
-        attrs["time"] = step[time_dim].item() if time_dim in step.coords else i
-        frames.append(patches_from_categorical(step, values, attrs=attrs, **kwargs))
+        if area_ha_grid is None:
+            area_ha_grid = _pixel_area_ha(step, crs)
+        attrs = dict(base_attrs)
+        attrs["time"] = _coord_scalar(step[time_dim]) if time_dim in step.coords else i
+        frames.append(patches_from_categorical(
+            step, values, attrs=attrs, area_ha_grid=area_ha_grid, **kwargs))
 
     if not frames:
         return gpd.GeoDataFrame(
@@ -328,6 +348,20 @@ def patches_over_time(
     out = gpd.GeoDataFrame(out, geometry="geometry", crs=crs)
     out["patch_id"] = np.arange(1, len(out) + 1, dtype="int64")
     return out
+
+
+def _coord_scalar(coord: xr.DataArray) -> Any:
+    """A 0-d coordinate as a Python-friendly scalar.
+
+    Datetime coordinates become :class:`pandas.Timestamp` whatever their
+    precision; other dtypes go through ``.item()``.
+    """
+    value = coord.values
+    if value.dtype.kind == "M":
+        # .item() on a datetime64[ns] scalar is an int of nanoseconds since the
+        # epoch, which is exactly what pd.Timestamp takes.
+        return pd.Timestamp(value.astype("datetime64[ns]").item())
+    return coord.item()
 
 
 def _metric_crs(patches: "GeoDataFrame", metric_crs=None):
@@ -404,7 +438,11 @@ def merge_patches(
     events : geopandas.GeoDataFrame
         ``event_id``, ``area_ha`` (sum of member areas), ``patch_count``,
         ``pixel_count``, the ``group_by`` columns, and the dissolved member
-        geometry, in the input CRS.
+        geometry, in the input CRS. Member areas are summed, not remeasured, so
+        patches that overlap in space (for example the same location in several
+        time steps merged without ``group_by=["time"]``) count once per patch.
+        Pass ``group_by`` to keep such patches apart, or measure the dissolved
+        geometry when a footprint area is wanted.
     membership : pandas.DataFrame
         Two columns, ``event_id`` and ``patch_id``, one row per member patch.
 
@@ -522,8 +560,18 @@ def assign_to_polygons(
         return pd.DataFrame({col: [] for col in out_columns})
 
     equal_area = pyproj.CRS.from_epsg(EQUAL_AREA_EPSG)
-    ev = events[["event_id", "geometry"]].to_crs(equal_area).reset_index(drop=True)
-    poly = polygons[[polygon_id, "geometry"]].to_crs(equal_area).reset_index(drop=True)
+    ev = (
+        events[["event_id", events.geometry.name]]
+        .set_geometry(events.geometry.name)
+        .to_crs(equal_area)
+        .reset_index(drop=True)
+    )
+    poly = (
+        polygons[[polygon_id, polygons.geometry.name]]
+        .set_geometry(polygons.geometry.name)
+        .to_crs(equal_area)
+        .reset_index(drop=True)
+    )
 
     joined = gpd.sjoin(ev, poly, predicate="intersects", how="inner")
     if len(joined) == 0:

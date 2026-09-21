@@ -732,6 +732,31 @@ class TestTierStepsByStep:
         assert first[2, 3, 3] == np.datetime64("2024-03-01")
         assert np.isnat(first[0, 3, 3])
 
+    def test_string_step_coordinates_parse_like_the_collapse(self):
+        cube = _tier_cube().assign_coords(time=["2024-01-01", "2024-02-01", "2024-03-01"])
+        by_step = observations_from_tier_steps_by_step(
+            cube, tier_map=LOSS_TIERS, fill_value=TIER_FILL
+        )
+        collapsed = observations_from_tier_steps(
+            cube, tier_map=LOSS_TIERS, fill_value=TIER_FILL
+        )
+        assert by_step["first_obs_date"].dtype == np.dtype("datetime64[ns]")
+        assert by_step["first_obs_date"].values[2, 2, 2] == np.datetime64("2024-03-01")
+        assert (
+            by_step["first_obs_date"].values[2, 2, 2]
+            == collapsed["first_obs_date"].values[2, 2]
+        )
+
+    def test_class_hint_outside_uint8_is_rejected(self):
+        with pytest.raises(ValueError, match="0..255"):
+            observations_from_tier_steps_by_step(
+                _tier_cube(), tier_map=LOSS_TIERS, fill_value=TIER_FILL, class_hint=300
+            )
+        with pytest.raises(ValueError, match="0..255"):
+            observations_from_tier_steps(
+                _tier_cube(), tier_map=LOSS_TIERS, fill_value=TIER_FILL, class_hint=-1
+            )
+
     def test_select_step_month_picks_one_period(self):
         ds = observations_from_tier_steps_by_step(
             _tier_cube(), tier_map=LOSS_TIERS, fill_value=TIER_FILL
