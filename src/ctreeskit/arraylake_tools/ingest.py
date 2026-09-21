@@ -529,13 +529,18 @@ class AnnualRasterIngester:
 
     def grow_extent(
         self,
-        extent: Sequence[float],
+        extent: Optional[Sequence[float]] = None,
         snap_to_chunks: bool = True,
         verify_samples: int = 50,
         seed: int = 0,
     ) -> str:
         """
-        Enlarge the stored ``(time, y, x)`` domain to ``extent`` without rewriting data.
+        Enlarge the stored ``(time, y, x)`` domain without rewriting data.
+
+        The dataset config's per-group ``extent`` is the intended domain, the same field
+        ``initialize_schema`` builds the grid from. The workflow is to update the config
+        first, then call ``grow_extent()`` with no argument so the stored domain
+        converges on it.
 
         The array is resized and, when the domain grows to the north or west (low index
         side), existing chunk references are relocated with Icechunk's metadata-only
@@ -545,16 +550,19 @@ class AnnualRasterIngester:
 
         Parameters
         ----------
-        extent : Sequence[float]
+        extent : Optional[Sequence[float]]
             Target outer edges ``(minx, miny, maxx, maxy)`` in the dataset CRS. Must
-            contain the current extent and lie on the stored lattice.
+            contain the current extent and lie on the stored lattice. Defaults to the
+            group's configured ``extent``; an explicit value that differs from the
+            config is honoured with a warning, since the config is then stale.
         snap_to_chunks : bool
             Chunks can only be shifted by whole chunks, so growth to the north/west must
             be a multiple of the chunk size. If True, such growth is rounded *outward*
             to the next chunk boundary (logged); if False, a misaligned request raises.
         verify_samples : int
-            After committing, compare this many randomly sampled pixels of the first time
-            step, by coordinate, between the pre- and post-growth snapshots. ``0`` skips.
+            After committing, compare this many randomly sampled pixels, drawn across
+            all time steps, by coordinate, between the pre- and post-growth snapshots.
+            ``0`` skips.
         seed : int
             Seed for the verification sample.
 
@@ -563,6 +571,19 @@ class AnnualRasterIngester:
         str
             The snapshot id of the growth commit.
         """
+        if extent is None:
+            if self.extent is None:
+                raise ValueError(
+                    "no extent given and the config has no 'extent' for group "
+                    f"{self.group_name!r}; set it in the config or pass extent=")
+            extent = self.extent
+        elif self.extent is not None and not np.allclose(
+                np.asarray(extent, dtype=float), np.asarray(self.extent, dtype=float),
+                rtol=0, atol=0):
+            logger.warning(
+                "grow_extent target %s differs from the configured extent %s; "
+                "update the config so it matches the stored domain",
+                tuple(extent), tuple(self.extent))
         repo = self._repo()
         before = repo.lookup_branch(self.branch_name)
         stored = xr.open_zarr(
@@ -652,18 +673,17 @@ class AnnualRasterIngester:
 
     def _verify_growth(self, repo, before: str, after: str, x_old: np.ndarray,
                        y_old: np.ndarray, n: int, seed: int) -> None:
-        """Compare ``n`` random pixels of time step 0, by coordinate, across snapshots."""
-        rng = np.random.default_rng(seed)
-        xi = rng.integers(0, x_old.size, n)
-        yi = rng.integers(0, y_old.size, n)
-        xs = xr.DataArray(x_old[xi], dims="pt")
-        ys = xr.DataArray(y_old[yi], dims="pt")
+        """Compare ``n`` random pixels, drawn across all time steps, by coordinate."""
         old = xr.open_zarr(repo.readonly_session(snapshot_id=before).store,
                            group=self.group_name, consolidated=False, chunks=None)
         new = xr.open_zarr(repo.readonly_session(snapshot_id=after).store,
                            group=self.group_name, consolidated=False, chunks=None)
-        a = old[self.variable].isel(time=0).sel(x=xs, y=ys, method="nearest").values
-        b = new[self.variable].isel(time=0).sel(x=xs, y=ys, method="nearest").values
+        rng = np.random.default_rng(seed)
+        ti = xr.DataArray(rng.integers(0, old.sizes["time"], n), dims="pt")
+        xs = xr.DataArray(x_old[rng.integers(0, x_old.size, n)], dims="pt")
+        ys = xr.DataArray(y_old[rng.integers(0, y_old.size, n)], dims="pt")
+        a = old[self.variable].isel(time=ti).sel(x=xs, y=ys, method="nearest").values
+        b = new[self.variable].isel(time=ti).sel(x=xs, y=ys, method="nearest").values
         if not np.array_equal(a, b):
             raise RuntimeError(
                 f"extent growth verification failed: {int((a != b).sum())}/{n} sampled "

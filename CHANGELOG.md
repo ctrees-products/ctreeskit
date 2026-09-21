@@ -9,10 +9,12 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 ## [Unreleased]
 
 ### Added
-- `AnnualRasterIngester.grow_extent(extent)` enlarges a stored `(time, y, x)`
+- `AnnualRasterIngester.grow_extent(extent=None)` enlarges a stored `(time, y, x)`
   domain without rewriting pixels: zarr resize plus Icechunk `shift_array` for
   north/west growth (snapped outward to whole chunks), coordinate arrays and
   `GeoTransform` rewritten, sampled verification against the pre-growth snapshot.
+  The target defaults to the group's configured `extent`, so the workflow is to
+  update the config first and then grow the stored domain to match.
 - Optional per-group `extent` `[minx, miny, maxx, maxy]` (outer edges) in dataset
   configs sizes the grid at `initialize_schema`; the template raster must sit on
   that lattice.

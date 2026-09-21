@@ -292,7 +292,7 @@ class TestAnnualRasterIngesterEndToEnd(unittest.TestCase):
         # a mosaic covering the new northern rows (and overlapping 10 old rows)
         # now fits and is placed by coordinate
         self.ingester.s3_path_prefix = f"{self._tmp.name}/north_"
-        self.ingest_north = self.ingester.ingest_year(2020)
+        self.ingester.ingest_year(2020)
         after2 = self._stored()["classification"].isel(time=0).values
         self.assertTrue((after2[:20][2:, 2:] == 20).all())
         self.assertTrue((after2[:2, :2] == self.NODATA).all())
@@ -300,6 +300,18 @@ class TestAnnualRasterIngesterEndToEnd(unittest.TestCase):
         # history: the pre-growth snapshot is still there
         msgs = [c.message for c in self.repo.ancestry(branch="main")]
         self.assertTrue(any(m.startswith("grow extent annual/classification") for m in msgs))
+
+    def test_grow_extent_defaults_to_configured_extent(self):
+        """With no argument, the domain converges on the config's extent."""
+        self.ingester.initialize_schema()
+        with self.assertRaises(ValueError):
+            self.ingester.grow_extent(verify_samples=0)  # config has no extent
+        self.ingester.extent = [-60.0, 9.8, -59.6, 10.2]
+        self.ingester.grow_extent(verify_samples=0)
+        stored = self._stored()
+        self.assertEqual(stored["classification"].shape, (2, 40, 40))
+        self.assertAlmostEqual(float(stored.y.values[0]), 10.195)
+        self.assertAlmostEqual(float(stored.x.values[-1]), -59.605)
 
     def test_grow_extent_snaps_low_index_growth_to_chunks(self):
         self.ingester.initialize_schema()
