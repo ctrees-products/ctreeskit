@@ -8,7 +8,25 @@ Versions prior to 0.2.0 were not tracked in this changelog.
 
 ## [Unreleased]
 
+### Added
+- `AnnualRasterIngester.grow_extent(extent=None)` enlarges a stored `(time, y, x)`
+  domain without rewriting pixels: zarr resize plus Icechunk `shift_array` for
+  north/west growth (snapped outward to whole chunks), coordinate arrays and
+  `GeoTransform` rewritten, sampled verification against the pre-growth snapshot.
+  The target defaults to the group's configured `extent`, so the workflow is to
+  update the config first and then grow the stored domain to match.
+- Optional per-group `extent` `[minx, miny, maxx, maxy]` (outer edges) in dataset
+  configs sizes the grid at `initialize_schema`; the template raster must sit on
+  that lattice.
+- `AnnualRasterIngester(group=...)` selects a group from multi-group configs.
+
 ### Changed
+- `ingest_year` places every source on the stored grid by coordinate. A source
+  covering part of the domain fills only its window; one that is off-lattice, at
+  another resolution, or larger than the domain raises `ValueError` instead of
+  failing on shape (or, for same-shape sources with a different origin, writing
+  to the wrong place). **Breaking** only for callers that relied on that
+  unchecked full-extent write.
 - The package type-checks cleanly under mypy, and CI enforces it. Geometry inputs
   to `process_geometry`, `clip_ds_to_geom`, and `create_proportion_geom_mask` are
   now typed (and validated) as Shapely `BaseGeometry` objects; other duck-typed
