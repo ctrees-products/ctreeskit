@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ctreeskit"
-version = "0.2.0"
+version = "0.3.0"
 description = """
 CTrees toolkit for geospatial analysis and forest carbon monitoring.
 Core features include xarray-based analysis tools.
@@ -63,6 +63,15 @@ zonal = [
     "numba>=0.63",
 ]
 
+# Vector patch/event output: polygonizing rasters into GeoDataFrames and
+# reading/writing GeoParquet. Kept separate from `zonal`: no numba in the chain,
+# so it carries no numpy cap. It repeats geopandas because extras are not
+# inherited -- `ctreeskit[vector]` alone has to be installable.
+vector = [
+    "geopandas>=1.0",
+    "pyarrow>=16.0",
+]
+
 # Dev tooling lives in a PEP 735 dependency group (installed with `uv sync --dev`,
 # never shipped in the wheel).
 [dependency-groups]
@@ -79,9 +88,14 @@ dev = [
 line-length = 100
 
 [tool.mypy]
-# boto3 and rasterio ship no type stubs or py.typed marker.
+# boto3, rasterio, geopandas and pyarrow ship no type stubs or py.typed marker.
 [[tool.mypy.overrides]]
-module = ["boto3", "boto3.*", "rasterio", "rasterio.*"]
+module = [
+    "boto3", "boto3.*",
+    "rasterio", "rasterio.*",
+    "geopandas", "geopandas.*",
+    "pyarrow", "pyarrow.*",
+]
 ignore_missing_imports = true
 
 [project.urls]

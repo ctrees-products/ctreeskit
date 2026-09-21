@@ -23,6 +23,8 @@ pip install ctreeskit
 3. [API Reference](#api-reference)
     - [XR Spatial Processor Overview](#xrspatialprocessor)
     - [XR Zonal Stats Overview](#xrzonalstats)
+    - [XR Vectorize Overview](#xrvectorize)
+    - [XR Observations Overview](#xrobservations)
     - [Arraylake Tools Overview](#arraylaketools)
 
 ## Installation
@@ -58,6 +60,12 @@ Reading dataset configs or GeoJSON geometries from `s3://` paths requires the
 optional `s3` extra (boto3, using the standard AWS credential chain):
 ```bash
 uv sync --extra s3
+```
+
+Vector output — polygonizing rasters into patches and events, and reading or
+writing GeoParquet — lives behind the optional `vector` extra:
+```bash
+uv sync --extra vector              # geopandas, pyarrow
 ```
 
 ## Dependencies
@@ -111,6 +119,50 @@ This module provides tools to:
 - Support both time-series and static (non-temporal) raster data
 - Offer flexible area calculation options (pixel counts, constant values, or spatially-variable areas)
 - Generate tabular summaries as pandas DataFrames
+
+# XrVectorize
+[Xr Vectorize ReadMe](./docs/xr_analyzer.md#xr_vectorize_module)
+
+This module provides tools to:
+
+- Polygonize connected regions of a boolean or categorical raster into vector
+  patches, one row per region, with true area in hectares on both geographic
+  (lat/lon) and projected grids
+- Apply a minimum mapping unit by measured area rather than pixel count
+- Walk a time dimension one step at a time, so a lazily backed cube is never
+  loaded in full
+- Group patches separated by no more than a given distance in metres into
+  events, with a patch-to-event membership table
+- Relate events to reference polygons many-to-many, by overlap area and fraction
+- Read and write GeoParquet with the CRS preserved
+
+Requires the optional `vector` extra (`pip install 'ctreeskit[vector]'`).
+
+# XrObservations
+[Xr Observations ReadMe](./docs/xr_analyzer.md#xr_observations_module)
+
+This module provides tools to:
+
+- Normalize detection layers from unlike sources into one observation record:
+  where, which source and sensor, when it was first seen, confirmed and last
+  seen, how many looks and how many positive, state, confidence, an optional
+  class hint, date precision and the snapshot it was read from
+- Decode a raster of dated state codes (a state band plus an encoded
+  year/month) chunk by chunk, without leaving lazy arrays
+- Decode annual slices carrying a per-pixel day value into dated alerts, and
+  select the alerts of one calendar month
+- Collapse a regularly stepped layer that writes each pixel at one step only,
+  routing each layer's own tier vocabulary onto the shared states and taking
+  the date from the step, or keep the steps for per-step masks
+- Bring a table of point detections onto the same record, with categorical or
+  numeric confidence rescaled to [0, 1], and rasterize it onto a reference grid
+- Flatten any record to one flat row per detected pixel, with the same columns
+  and dtypes whatever the source, and round-trip it as Parquet
+- Reduce a record to a boolean mask that feeds straight into the vectorize
+  module's `patches_from_mask`
+
+Parquet output requires the optional `vector` extra
+(`pip install 'ctreeskit[vector]'`).
 
 # ArraylakeTools
 [Arraylake Tools ReadMe](./docs/arraylake_tools.md)
